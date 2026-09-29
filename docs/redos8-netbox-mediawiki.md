@@ -473,6 +473,7 @@ journalctl -u netbox -u nginx -u php-fpm -xe --no-pager | tail -100
 
 ## Альтернатива: Docker
 
-Автоустановка на чистый сервер (скрипт ставит Docker, генерирует пароли, пишет `CREDENTIALS.txt`):
-
-→ [`docker/README.md`](../docker/README.md)
+- Автоустановка (скрипт ставит Docker, генерирует пароли, пишет `CREDENTIALS.txt`):  
+  → [`docker/README.md`](../docker/README.md)
+- Ручная установка в Docker (каталоги, сертификаты, `.env`, Compose по шагам):  
+  → [`docker/MANUAL.md`](../docker/MANUAL.md)
