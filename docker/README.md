@@ -2,6 +2,8 @@
 
 Установка на **чистый** сервер (Red OS 8 / RHEL-подобные): скрипт сам ставит Docker, поднимает стек, генерирует пароли и в конце пишет всё в файл.
 
+**Ручная установка** (без скрипта: каталоги, `.env`, сертификаты, Compose, MediaWiki по шагам) → [`MANUAL.md`](MANUAL.md).
+
 ## Что получите
 
 | Система   | URL                        |
@@ -140,6 +142,7 @@ docker compose --env-file .env up -d
 docker/
   install.sh                 # главный установщик
   uninstall.sh               # полное удаление стека
+  MANUAL.md                  # подробная ручная установка
   certs/                     # ваши server.crt / server.key (опционально)
   templates/
     docker-compose.yml
@@ -148,6 +151,21 @@ docker/
     nginx/mediawiki.conf
   README.md
 ```
+
+После установки на сервере рабочее дерево обычно такое:
+
+```text
+/opt/netbox-wiki/
+  docker-compose.yml
+  .env
+  CREDENTIALS.txt
+  certs/server.crt
+  certs/server.key
+  nginx/netbox.conf
+  nginx/mediawiki.conf
+```
+
+Подробная карта каталогов и volumes — в [`MANUAL.md`](MANUAL.md).
 
 ## Требования к серверу
 
