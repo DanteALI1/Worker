@@ -1,0 +1,6 @@
+[redos8_3rdparty_src]
+name=RedOS 8 - 3rdparty (Mirror source)
+baseurl=https://repo1.red-soft.ru/redos/8.0/$basearch/3rdparty,https://mirror.yandex.ru/redos/8.0/$basearch/3rdparty,http://repo.red-soft.ru/redos/8.0/$basearch/3rdparty
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
+enabled=0

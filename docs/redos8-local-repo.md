@@ -21,7 +21,7 @@
 ## 1. Перед запуском
 
 1. РЕД ОС 8 minimal, доступ в Интернет (для `reposync`).
-2. Место на **`/opt`** — сотни ГБ под актуальное зеркало (~размер репозиториев + запас).
+2. Место на **`/opt`** — часто **300–400+ ГБ** под все ветки (os/updates/extras/3rdparty/debuginfo/kernel-*) + запас.
 3. Место на **`/var`** — под архив старых пакетов.
 4. Сертификаты:
 
@@ -56,7 +56,19 @@ bash deploy-uibrep-mirror.sh
 | SSL | `/etc/pki/tls/certs/repo.crt`, `.../private/repo.key` |
 | firewalld | HTTPS из `10.0.0.0/8` |
 | cron 02:30 | `ARCHIVE=1 NEWEST=1` sync |
-| Первый sync | полное зеркало (`NEWEST=0`), **долго** |
+| Первый sync | полное зеркало всех веток (`NEWEST=0`), **долго** |
+
+По умолчанию зеркалируются **все** ветки РЕД ОС 8:
+
+| Ветка | repoid | Клиент (enabled) |
+|-------|--------|------------------|
+| os | `redos8_base_src` | 1 |
+| updates | `redos8_updates_src` | 1 |
+| extras | `redos8_extras_src` | 1 — доп. ПО |
+| 3rdparty | `redos8_3rdparty_src` | 1 — сторонние пакеты |
+| debuginfo | `redos8_debuginfo_src` | 0 |
+| kernel-rt | `redos8_kernel_rt_src` | 0 |
+| kernel-testing | `redos8_kernel_testing_src` | 0 |
 
 Опции:
 
@@ -64,6 +76,9 @@ bash deploy-uibrep-mirror.sh
 SKIP_SYNC=1 bash deploy-uibrep-mirror.sh          # только подготовка
 REPO_NET=10.0.0.0/24 bash deploy-uibrep-mirror.sh # другая маска
 REPO_FQDN=имя.local bash deploy-uibrep-mirror.sh  # принудительно имя
+# сузить список (не рекомендуется, если нужно доп. ПО):
+REPOIDS="redos8_base_src redos8_updates_src redos8_extras_src redos8_3rdparty_src" \
+  bash deploy-uibrep-mirror.sh
 ```
 
 ---
@@ -75,10 +90,13 @@ cat /opt/repos/DEPLOY.txt
 FQDN=$(awk -F= '/^REPO_FQDN=/{print $2}' /opt/repos/DEPLOY.txt)
 
 curl -Ik "https://${FQDN}/"
-curl -I  "https://${FQDN}/repos/redos8/redos8_base_src/repodata/repomd.xml"   # после sync → 200
+curl -I  "https://${FQDN}/repos/redos8/redos8_base_src/repodata/repomd.xml"     # после sync → 200
+curl -I  "https://${FQDN}/repos/redos8/redos8_extras_src/repodata/repomd.xml"
+curl -I  "https://${FQDN}/repos/redos8/redos8_3rdparty_src/repodata/repomd.xml"
 curl -Ik "https://${FQDN}/archive/"
 
 df -h /opt /var
+du -sh /opt/repos/redos8/*
 tail -f /var/log/local-repo/sync-$(date +%F).log
 ```
 
@@ -100,9 +118,20 @@ REPO_IP=${MIRROR_IP} CA_FILE=/tmp/uibrep-ca.crt bash /tmp/configure-repo-client.
 dnf repolist
 dnf makecache
 dnf check-update || true
+
+# доп. ПО из extras / 3rdparty (уже enabled=1 после helper)
+dnf search ИМЯ
+dnf install ПАКЕТ
 ```
 
-Скрипт на клиенте: `/etc/hosts`, trust CA, отключение официальных repo, локальные HTTPS `.repo` (+ archive с `enabled=0`).
+Скрипт на клиенте: `/etc/hosts`, trust CA, отключение официальных repo, локальные HTTPS `.repo` (Base+Updates+Extras+3rdparty включены; debuginfo/kernel/archive — `enabled=0`).
+
+Вручную debuginfo/kernel:
+
+```bash
+dnf install ПАКЕТ --enablerepo=RedOS8-Debuginfo-local
+# или при настройке: WITH_DEBUG=1 WITH_KERNEL=1 bash configure-client.sh
+```
 
 ---
 
@@ -146,7 +175,8 @@ repo-archive-tool.sh restore redos8_base_src имя.rpm
 | Задача | Команда |
 |--------|---------|
 | Ночной sync + архив | уже в cron `02:30` |
-| Ручной sync | `ARCHIVE=1 NEWEST=1 /usr/local/sbin/sync-redos8-repos.sh` |
+| Ручной sync (все ветки) | `ARCHIVE=1 NEWEST=1 /usr/local/sbin/sync-redos8-repos.sh` |
+| Sync только части | `REPOIDS="redos8_extras_src redos8_3rdparty_src" ARCHIVE=1 NEWEST=1 /usr/local/sbin/sync-redos8-repos.sh` |
 | Параметры | `cat /opt/repos/DEPLOY.txt` |
 | Лог | `/var/log/local-repo/sync-ДАТА.log` |
 | Отчёт архива | `cat /var/local-repo-archive/reports/latest.txt` |
@@ -161,8 +191,8 @@ repo-archive-tool.sh restore redos8_base_src имя.rpm
 | httpd не стартует | `apachectl configtest`, `journalctl -u httpd -xe` |
 | SSL на клиенте | нет CA → скопировать `/opt/repos/ca/uibrep-ca.crt` |
 | hostname mismatch | FQDN в `.repo` ≠ SAN — смотрите `DEPLOY.txt` |
-| Мало места | `df -h /opt /var` |
-| 404 repomd | sync ещё идёт |
+| Мало места | `df -h /opt /var` — все ветки часто 300–400+ ГБ на `/opt` |
+| 404 repomd | sync ещё идёт; проверьте нужную ветку (`extras` / `3rdparty`) |
 
 ---
 

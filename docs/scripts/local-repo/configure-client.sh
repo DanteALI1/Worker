@@ -1,29 +1,20 @@
 #!/bin/bash
 # Настройка клиента РЕД ОС 8 на локальное зеркало по HTTPS (УЦ).
-# Запуск от root:
-#   REPO_HOST=repo.example.ru PROTO=https CA_CERT=/path/ca-root.crt \
-#     bash configure-client.sh
+#   REPO_HOST=fqdn REPO_IP=10.0.0.10 CA_CERT=/path/ca.crt bash configure-client.sh
 #
-# Опции:
-#   REPO_HOST     — FQDN зеркала (должен совпадать с CN/SAN сертификата)
-#   PROTO         — https (по умолчанию) или http
-#   CA_CERT       — корневой/промежуточный CA (.crt) → trust store
-#   SSLVERIFY     — 1 по умолчанию; 0 только если нет CA (не рекомендуется)
-#   WITH_EXTRAS   — 1
-#   WITH_INTERNAL — 1
-#   WITH_ARCHIVE  — 1 = добавить archive .repo (enabled=0, старые пакеты с /var зеркала)
-#   REPO_IP       — если задан, добавит /etc/hosts: REPO_IP REPO_HOST
+# По умолчанию включает: Base, Updates, Extras, 3rdparty.
+# Debuginfo / kernel-* — enabled=0 (включаются WITH_DEBUG=1 / WITH_KERNEL=1).
 
 set -euo pipefail
 
 REPO_HOST="${REPO_HOST:-repo.example.ru}"
 REPO_IP="${REPO_IP:-}"
-WITH_EXTRAS="${WITH_EXTRAS:-0}"
-WITH_INTERNAL="${WITH_INTERNAL:-0}"
-WITH_ARCHIVE="${WITH_ARCHIVE:-1}"
 PROTO="${PROTO:-https}"
 SSLVERIFY="${SSLVERIFY:-1}"
 CA_CERT="${CA_CERT:-}"
+WITH_ARCHIVE="${WITH_ARCHIVE:-1}"
+WITH_DEBUG="${WITH_DEBUG:-0}"
+WITH_KERNEL="${WITH_KERNEL:-0}"
 REPO_DIR="/etc/yum.repos.d"
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -37,107 +28,48 @@ if [[ -n "$REPO_IP" ]]; then
   else
     echo "${REPO_IP} ${REPO_HOST}" >> /etc/hosts
   fi
-  echo "hosts: ${REPO_IP} ${REPO_HOST}"
 fi
 
-if [[ -n "$CA_CERT" ]]; then
-  if [[ ! -f "$CA_CERT" ]]; then
-    echo "Нет файла CA: $CA_CERT" >&2
-    exit 1
-  fi
-  echo "== Установка CA в trust store =="
-  install -m 644 "$CA_CERT" /etc/pki/ca-trust/source/anchors/org-ca.crt
-  update-ca-trust
-  update-ca-trust extract
+if [[ -n "$CA_CERT" && -f "$CA_CERT" ]]; then
+  install -m 644 "$CA_CERT" /etc/pki/ca-trust/source/anchors/uibrep-ca.crt
+  update-ca-trust && update-ca-trust extract
 fi
 
-disable_official() {
-  local f
-  shopt -s nullglob
-  for f in \
-    "${REPO_DIR}/RedOS-Base.repo" \
-    "${REPO_DIR}/RedOS-Updates.repo" \
-    "${REPO_DIR}/RedOS-Extras.repo" \
-    "${REPO_DIR}"/RedOS*.repo
-  do
-    case "$(basename "$f")" in
-      *-local.repo|RedOS8-*-local.repo|Internal-local.repo) continue ;;
-    esac
-    if [[ -f "$f" ]] && grep -qE '^enabled=1' "$f"; then
-      if grep -qE 'red-soft\.ru|mirror\.yandex\.ru' "$f"; then
-        sed -i 's/^enabled=1/enabled=0/' "$f"
-        echo "disabled: $f"
-      fi
-    fi
-  done
-  shopt -u nullglob
-  dnf config-manager --set-disabled RedOS-Base RedOS-Updates 2>/dev/null || true
-}
+for f in "${REPO_DIR}"/RedOS-Base.repo "${REPO_DIR}"/RedOS-Updates.repo \
+         "${REPO_DIR}"/RedOS-Extras.repo "${REPO_DIR}"/RedOS-3rdparty.repo; do
+  [[ -f "$f" ]] && sed -i 's/^enabled=1/enabled=0/' "$f"
+done
 
 write_repo() {
-  local id="$1" name="$2" path="$3" gpg="$4" enabled="${5:-1}"
-  local file="${REPO_DIR}/${id}.repo"
+  local id="$1" name="$2" path="$3" enabled="${4:-1}"
   {
     echo "[${id}]"
     echo "name=${name}"
     echo "baseurl=${PROTO}://${REPO_HOST}${path}"
-    echo "gpgcheck=${gpg}"
-    if [[ "$gpg" == "1" ]]; then
-      echo "gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT"
-    fi
-    if [[ "$PROTO" == "https" ]]; then
-      echo "sslverify=${SSLVERIFY}"
-    fi
+    echo "gpgcheck=1"
+    echo "gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT"
+    [[ "$PROTO" == "https" ]] && echo "sslverify=${SSLVERIFY}"
     echo "enabled=${enabled}"
-  } >"$file"
-  echo "wrote: $file (enabled=${enabled})"
+  } >"${REPO_DIR}/${id}.repo"
+  echo "wrote ${id}.repo enabled=${enabled}"
 }
 
-disable_official
-
-write_repo "RedOS8-Base-local" \
-  "Local RED OS 8 Base repo" \
-  "/repos/redos8/redos8_base_src/" \
-  "1"
-
-write_repo "RedOS8-Updates-local" \
-  "Local RED OS 8 Updates repo" \
-  "/repos/redos8/redos8_updates_src/" \
-  "1"
-
-if [[ "$WITH_EXTRAS" == "1" ]]; then
-  write_repo "RedOS8-Extras-local" \
-    "Local RED OS 8 Extras repo" \
-    "/repos/redos8/redos8_extras_src/" \
-    "1"
-fi
-
-if [[ "$WITH_INTERNAL" == "1" ]]; then
-  write_repo "Internal-local" \
-    "Internal packages (local mirror)" \
-    "/repos/internal/" \
-    "0"
-fi
+write_repo RedOS8-Base-local     "Local RED OS 8 Base"     "/repos/redos8/redos8_base_src/"     1
+write_repo RedOS8-Updates-local  "Local RED OS 8 Updates"  "/repos/redos8/redos8_updates_src/"  1
+write_repo RedOS8-Extras-local   "Local RED OS 8 Extras"   "/repos/redos8/redos8_extras_src/"   1
+write_repo RedOS8-3rdparty-local "Local RED OS 8 3rdparty" "/repos/redos8/redos8_3rdparty_src/" 1
+write_repo RedOS8-Debuginfo-local     "Local RED OS 8 Debuginfo"      "/repos/redos8/redos8_debuginfo_src/"      "$WITH_DEBUG"
+write_repo RedOS8-KernelRT-local      "Local RED OS 8 kernel-rt"      "/repos/redos8/redos8_kernel_rt_src/"      "$WITH_KERNEL"
+write_repo RedOS8-KernelTesting-local "Local RED OS 8 kernel-testing" "/repos/redos8/redos8_kernel_testing_src/" "$WITH_KERNEL"
 
 if [[ "$WITH_ARCHIVE" == "1" ]]; then
-  write_repo "RedOS8-Archive-Base-local" \
-    "Local RED OS 8 Base ARCHIVE (old packages)" \
-    "/archive/redos8/redos8_base_src/" \
-    "1" "0"
-  write_repo "RedOS8-Archive-Updates-local" \
-    "Local RED OS 8 Updates ARCHIVE (old packages)" \
-    "/archive/redos8/redos8_updates_src/" \
-    "1" "0"
-fi
-
-echo "== Проверка HTTPS =="
-if [[ "$PROTO" == "https" ]]; then
-  curl -fsSI "https://${REPO_HOST}/repos/redos8/redos8_base_src/repodata/repomd.xml" | head -n1 \
-    || echo "Предупреждение: curl не получил repomd.xml — проверьте CA, DNS и зеркало" >&2
+  write_repo RedOS8-Archive-Base-local     "Base ARCHIVE"     "/archive/redos8/redos8_base_src/"     0
+  write_repo RedOS8-Archive-Updates-local  "Updates ARCHIVE"  "/archive/redos8/redos8_updates_src/"  0
+  write_repo RedOS8-Archive-Extras-local   "Extras ARCHIVE"   "/archive/redos8/redos8_extras_src/"   0
+  write_repo RedOS8-Archive-3rdparty-local "3rdparty ARCHIVE" "/archive/redos8/redos8_3rdparty_src/" 0
 fi
 
 dnf clean all
 dnf makecache
 dnf repolist
-
-echo "OK: клиент → ${PROTO}://${REPO_HOST}"
+echo "OK → ${PROTO}://${REPO_HOST} (Base+Updates+Extras+3rdparty)"

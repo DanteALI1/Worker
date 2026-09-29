@@ -19,7 +19,7 @@
 #   ARCHIVE_ROOT=/var/local-repo-archive
 #   ARCHIVE=1|0
 #   ARCHIVE_KEEP_DAYS=180   (0 = не чистить)
-#   REPOIDS="redos8_base_src redos8_updates_src"
+#   REPOIDS="redos8_base_src redos8_updates_src redos8_extras_src ..."
 #   NEWEST=1|0
 #   LOG_DIR=/var/log/local-repo
 
@@ -30,7 +30,8 @@ ARCHIVE_ROOT="${ARCHIVE_ROOT:-/var/local-repo-archive}"
 ARCHIVE_REPO="${ARCHIVE_REPO:-${ARCHIVE_ROOT}/redos8}"
 ARCHIVE="${ARCHIVE:-1}"
 ARCHIVE_KEEP_DAYS="${ARCHIVE_KEEP_DAYS:-180}"
-REPOIDS="${REPOIDS:-redos8_base_src redos8_updates_src}"
+# Все основные ветки РЕД ОС 8 (для установки доп. ПО нужны extras и 3rdparty)
+REPOIDS="${REPOIDS:-redos8_base_src redos8_updates_src redos8_extras_src redos8_3rdparty_src redos8_debuginfo_src redos8_kernel_rt_src redos8_kernel_testing_src}"
 NEWEST="${NEWEST:-1}"
 LOG_DIR="${LOG_DIR:-/var/log/local-repo}"
 INCOMING="${INCOMING:-${DESTDIR}.incoming}"

@@ -15,4 +15,6 @@ bash deploy-uibrep-mirror.sh
 SKIP_SYNC=1 bash deploy-uibrep-mirror.sh   # без первого reposync
 ```
 
+По умолчанию sync зеркалирует все ветки: base, updates, **extras**, **3rdparty**, debuginfo, kernel-rt, kernel-testing (часто 300–400+ ГБ на `/opt`).
+
 Серты по умолчанию: `/home/svcsecadm/uibrep.crt`, `uibrep.key`. FQDN — из сертификата.
