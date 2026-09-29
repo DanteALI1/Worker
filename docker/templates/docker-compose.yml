@@ -1,0 +1,141 @@
+# NetBox + MediaWiki — установка в Docker (Red OS 8 / «голый» сервер)
+#
+# Скопировать в /opt/netbox-wiki/docker-compose.yml (делает install.sh).
+# Переменные берутся из файла .env рядом с compose.
+
+services:
+  postgres:
+    image: docker.io/postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${NETBOX_DB_NAME}
+      POSTGRES_USER: ${NETBOX_DB_USER}
+      POSTGRES_PASSWORD: ${NETBOX_DB_PASSWORD}
+    volumes:
+      - netbox-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NETBOX_DB_USER} -d ${NETBOX_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: docker.io/redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - netbox-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  netbox:
+    image: docker.io/netboxcommunity/netbox:${NETBOX_IMAGE_TAG:-v3.7.8}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SECRET_KEY: ${NETBOX_SECRET_KEY}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${NETBOX_DB_NAME}
+      DB_USER: ${NETBOX_DB_USER}
+      DB_PASSWORD: ${NETBOX_DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DATABASE: 0
+      REDIS_CACHE_HOST: redis
+      REDIS_CACHE_PORT: 6379
+      REDIS_CACHE_DATABASE: 1
+      SUPERUSER_NAME: ${NETBOX_SUPERUSER_NAME}
+      SUPERUSER_EMAIL: ${NETBOX_SUPERUSER_EMAIL}
+      SUPERUSER_PASSWORD: ${NETBOX_SUPERUSER_PASSWORD}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+      CORS_ORIGIN_ALLOW_ALL: "True"
+    volumes:
+      - netbox-media:/opt/netbox/netbox/media
+      - netbox-reports:/opt/netbox/netbox/reports
+      - netbox-scripts:/opt/netbox/netbox/scripts
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/login/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+
+  netbox-worker:
+    image: docker.io/netboxcommunity/netbox:${NETBOX_IMAGE_TAG:-v3.7.8}
+    restart: unless-stopped
+    command: /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py rqworker
+    depends_on:
+      - netbox
+      - postgres
+      - redis
+    environment:
+      SECRET_KEY: ${NETBOX_SECRET_KEY}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${NETBOX_DB_NAME}
+      DB_USER: ${NETBOX_DB_USER}
+      DB_PASSWORD: ${NETBOX_DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DATABASE: 0
+      REDIS_CACHE_HOST: redis
+      REDIS_CACHE_PORT: 6379
+      REDIS_CACHE_DATABASE: 1
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+
+  mediawiki-db:
+    image: docker.io/mariadb:10.11
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${WIKI_DB_NAME}
+      MYSQL_USER: ${WIKI_DB_USER}
+      MYSQL_PASSWORD: ${WIKI_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${WIKI_DB_ROOT_PASSWORD}
+    volumes:
+      - mediawiki-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  mediawiki:
+    image: docker.io/mediawiki:${MEDIAWIKI_IMAGE_TAG:-1.39.11}
+    restart: unless-stopped
+    depends_on:
+      mediawiki-db:
+        condition: service_healthy
+    volumes:
+      # Весь docroot в volume — сохраняются LocalSettings.php и uploads
+      - mediawiki-html:/var/www/html
+
+  nginx:
+    image: docker.io/nginx:1.25-alpine
+    restart: unless-stopped
+    depends_on:
+      - netbox
+      - mediawiki
+    ports:
+      - "${NETBOX_HTTPS_PORT}:443"
+      - "${MEDIAWIKI_HTTPS_PORT}:8443"
+    volumes:
+      - ./nginx/netbox.conf:/etc/nginx/conf.d/netbox.conf:ro
+      - ./nginx/mediawiki.conf:/etc/nginx/conf.d/mediawiki.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+
+volumes:
+  netbox-postgres:
+  netbox-redis:
+  netbox-media:
+  netbox-reports:
+  netbox-scripts:
+  mediawiki-mysql:
+  mediawiki-html:

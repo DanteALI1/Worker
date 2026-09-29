@@ -2,5 +2,6 @@
 
 Документация по установке сервисов:
 
-- [NetBox + MediaWiki на Red OS 8](docs/redos8-netbox-mediawiki.md) — поэтапная установка на одном сервере с разделением по портам и своими SSL-сертификатами
-- Шаблоны Nginx: [`docs/configs/`](docs/configs/)
+- [NetBox + MediaWiki на Red OS 8 (без Docker)](docs/redos8-netbox-mediawiki.md) — ручная установка из пакетов
+- [NetBox + MediaWiki в Docker](docker/README.md) — автоустановка скриптом на «голый» сервер, генерация кредов в файл
+- Шаблоны Nginx (без Docker): [`docs/configs/`](docs/configs/)
