@@ -1,28 +1,27 @@
-# Клиентские .repo — подключение к локальному зеркалу
+# Клиентские .repo — HTTPS к локальному зеркалу
 
-Перед копированием замените `10.0.0.10` на IP вашего сервера-зеркала.  
-Официальные `RedOS-Base.repo` / `RedOS-Updates.repo` на клиенте должны иметь `enabled=0`.
+Замените `repo.example.ru` на FQDN из сертификата УЦ.  
+На клиенте сначала установите корневой CA УЦ в trust store (см. гайд).
 
-Пути в `baseurl` (`/repos/redos8/...`) соответствуют symlink  
-`/var/www/html/repos` → `/opt/repos` на зеркале.
+Официальные `RedOS-Base.repo` / `RedOS-Updates.repo` → `enabled=0`.
 
 ## Установка
 
 ```bash
-REPO_HOST=10.0.0.10
-sed "s/10.0.0.10/${REPO_HOST}/g" RedOS8-Base-local.repo \
-  > /etc/yum.repos.d/RedOS8-Base-local.repo
-sed "s/10.0.0.10/${REPO_HOST}/g" RedOS8-Updates-local.repo \
-  > /etc/yum.repos.d/RedOS8-Updates-local.repo
-# опционально:
-# sed "s/10.0.0.10/${REPO_HOST}/g" RedOS8-Extras-local.repo \
-#   > /etc/yum.repos.d/RedOS8-Extras-local.repo
-# sed "s/10.0.0.10/${REPO_HOST}/g" Internal-local.repo \
-#   > /etc/yum.repos.d/Internal-local.repo
+# 1) DNS или hosts
+echo '10.0.0.10 repo.example.ru' >> /etc/hosts
 
-dnf clean all
-dnf makecache
-dnf repolist
+# 2) CA УЦ
+install -m 644 /path/to/ca-root.crt /etc/pki/ca-trust/source/anchors/org-ca.crt
+update-ca-trust && update-ca-trust extract
+
+# 3) repo-файлы
+REPO_HOST=repo.example.ru
+for f in RedOS8-Base-local.repo RedOS8-Updates-local.repo; do
+  sed "s/repo.example.ru/${REPO_HOST}/g" "$f" > "/etc/yum.repos.d/$f"
+done
+
+dnf clean all && dnf makecache && dnf repolist
 ```
 
-Или скрипт: `docs/scripts/local-repo/configure-client.sh`.
+Или: `REPO_HOST=repo.example.ru PROTO=https CA_CERT=/path/ca-root.crt bash configure-client.sh`.
