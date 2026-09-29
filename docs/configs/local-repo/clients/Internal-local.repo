@@ -1,5 +1,6 @@
 [Internal-local]
 name=Internal packages (local mirror)
-baseurl=http://10.0.0.10/repos/internal/
+baseurl=https://repo.example.ru/repos/internal/
 gpgcheck=0
+sslverify=1
 enabled=1

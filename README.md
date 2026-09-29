@@ -2,20 +2,25 @@
 
 Документация по инфраструктуре на РЕД ОС 8:
 
-- **[Локальный репозиторий РЕД ОС 8](docs/redos8-local-repo.md)** — зеркало Base/Updates на `/opt/repos`, раздача обновлений в сети `10.0.0.0`
-- Конфиги `.repo` и httpd: [`docs/configs/local-repo/`](docs/configs/local-repo/)
-- Скрипты bootstrap / sync / клиент: [`docs/scripts/local-repo/`](docs/scripts/local-repo/)
+- **[Локальный репозиторий РЕД ОС 8 (HTTPS + УЦ)](docs/redos8-local-repo.md)** — зеркало на `/opt/repos`, раздача по HTTPS с вашими `.crt`/`.key`
+- Конфиги: [`docs/configs/local-repo/`](docs/configs/local-repo/)
+- Скрипты: [`docs/scripts/local-repo/`](docs/scripts/local-repo/)
 
-### Быстрый старт зеркала
+### Зеркало
 
 ```bash
 cd docs/scripts/local-repo
-REPO_NET=10.0.0.0/8 bash bootstrap-mirror-server.sh
+REPO_FQDN=repo.example.ru \
+SSL_CRT=/path/server.crt SSL_KEY=/path/server.key \
+REPO_NET=10.0.0.0/8 \
+  bash bootstrap-mirror-server.sh
 NEWEST=0 /usr/local/sbin/sync-redos8-repos.sh
 ```
 
-### Быстрый старт клиента
+### Клиент
 
 ```bash
-REPO_HOST=10.0.0.10 bash docs/scripts/local-repo/configure-client.sh
+REPO_HOST=repo.example.ru REPO_IP=10.0.0.10 \
+PROTO=https CA_CERT=/path/ca-root.crt \
+  bash docs/scripts/local-repo/configure-client.sh
 ```

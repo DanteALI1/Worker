@@ -1,35 +1,44 @@
-# Скрипты локального репозитория РЕД ОС 8
+# Скрипты локального репозитория РЕД ОС 8 (HTTPS + УЦ)
 
-Хранилище по умолчанию: **`/opt/repos`** (symlink `/var/www/html/repos` → `/opt/repos`).
+Хранилище: **`/opt/repos`**. Раздача: **HTTPS** с вашими `.crt` / `.key` от УЦ.
 
-| Скрипт | Где запускать | Назначение |
-|--------|---------------|------------|
-| `bootstrap-mirror-server.sh` | сервер-зеркало | пакеты, httpd, firewalld, `/opt/repos`, cron |
-| `sync-redos8-repos.sh` | сервер-зеркало | `reposync` + `createrepo` → `/opt/repos/redos8` |
-| `configure-client.sh` | каждый клиент | отключить официальные repo, подключить зеркало |
+| Скрипт | Где | Назначение |
+|--------|-----|------------|
+| `bootstrap-mirror-server.sh` | зеркало | пакеты, `/opt/repos`, firewalld https, опционально SSL |
+| `install-ssl-certs.sh` | зеркало | установка `.crt`/`.key`/chain, httpd SSL, trust |
+| `sync-redos8-repos.sh` | зеркало | `reposync` + `createrepo` → `/opt/repos/redos8` |
+| `configure-client.sh` | клиент | CA в trust, HTTPS `.repo`, отключение официальных |
 
-Подробный гайд: [`docs/redos8-local-repo.md`](../../redos8-local-repo.md).
+Гайд: [`docs/redos8-local-repo.md`](../../redos8-local-repo.md).
 
-## Примеры
+## Зеркало
 
 ```bash
-# На зеркале (нужны рядом docs/scripts/local-repo и docs/configs/local-repo):
 cd docs/scripts/local-repo
-REPO_NET=10.0.0.0/8 bash bootstrap-mirror-server.sh
 
-# Первая полная синхронизация (сотни ГБ, долго):
+REPO_NET=10.0.0.0/8 \
+REPO_FQDN=repo.example.ru \
+SSL_CRT=/path/to/server.crt \
+SSL_KEY=/path/to/server.key \
+SSL_CHAIN=/path/to/ca-chain.crt \
+  bash bootstrap-mirror-server.sh
+
 NEWEST=0 /usr/local/sbin/sync-redos8-repos.sh
-
-# Ежедневный режим (только newest) — уже в cron после bootstrap
-
-# На клиенте:
-REPO_HOST=10.0.0.10 bash configure-client.sh
-REPO_HOST=10.0.0.10 WITH_EXTRAS=1 WITH_INTERNAL=1 bash configure-client.sh
 ```
 
-## Переопределение каталога
+Только SSL (если зеркало уже есть):
 
 ```bash
-STORAGE_ROOT=/data/repos bash bootstrap-mirror-server.sh
-DESTDIR=/data/repos/redos8 /usr/local/sbin/sync-redos8-repos.sh
+SSL_CRT=/path/server.crt SSL_KEY=/path/server.key \
+REPO_FQDN=repo.example.ru bash install-ssl-certs.sh
+```
+
+## Клиент
+
+```bash
+REPO_HOST=repo.example.ru \
+REPO_IP=10.0.0.10 \
+PROTO=https \
+CA_CERT=/path/to/ca-root.crt \
+  bash configure-client.sh
 ```
