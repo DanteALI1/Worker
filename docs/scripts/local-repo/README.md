@@ -5,12 +5,14 @@
 | Скрипт | Назначение |
 |--------|------------|
 | **`deploy-uibrep-mirror.sh`** | **готово к запуску** под `/home/svcsecadm/uibrep.{crt,key}`, FQDN из серта |
+| **`sync-redos8-repos.sh`** | sync + **архив старых RPM на `/var`** + отчёт |
+| **`repo-archive-tool.sh`** | list/search/url/restore из архива |
 | `bootstrap-mirror-server.sh` | общий bootstrap |
 | `install-ssl-certs.sh` | только SSL |
-| `sync-redos8-repos.sh` | `reposync` + `createrepo` |
-| `configure-client.sh` | универсальный клиент |
+| `configure-client.sh` | клиент (+ archive `.repo` с `enabled=0`) |
 
-Пошагово: [`docs/redos8-uibrep-runbook.md`](../../redos8-uibrep-runbook.md).
+Пошагово: [`docs/redos8-uibrep-runbook.md`](../../redos8-uibrep-runbook.md).  
+Архив: [`docs/redos8-repo-archive.md`](../../redos8-repo-archive.md).
 
 ## Запуск на вашем зеркале
 

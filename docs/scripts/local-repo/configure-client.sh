@@ -11,6 +11,7 @@
 #   SSLVERIFY     — 1 по умолчанию; 0 только если нет CA (не рекомендуется)
 #   WITH_EXTRAS   — 1
 #   WITH_INTERNAL — 1
+#   WITH_ARCHIVE  — 1 = добавить archive .repo (enabled=0, старые пакеты с /var зеркала)
 #   REPO_IP       — если задан, добавит /etc/hosts: REPO_IP REPO_HOST
 
 set -euo pipefail
@@ -19,6 +20,7 @@ REPO_HOST="${REPO_HOST:-repo.example.ru}"
 REPO_IP="${REPO_IP:-}"
 WITH_EXTRAS="${WITH_EXTRAS:-0}"
 WITH_INTERNAL="${WITH_INTERNAL:-0}"
+WITH_ARCHIVE="${WITH_ARCHIVE:-1}"
 PROTO="${PROTO:-https}"
 SSLVERIFY="${SSLVERIFY:-1}"
 CA_CERT="${CA_CERT:-}"
@@ -73,7 +75,7 @@ disable_official() {
 }
 
 write_repo() {
-  local id="$1" name="$2" path="$3" gpg="$4"
+  local id="$1" name="$2" path="$3" gpg="$4" enabled="${5:-1}"
   local file="${REPO_DIR}/${id}.repo"
   {
     echo "[${id}]"
@@ -86,9 +88,9 @@ write_repo() {
     if [[ "$PROTO" == "https" ]]; then
       echo "sslverify=${SSLVERIFY}"
     fi
-    echo "enabled=1"
+    echo "enabled=${enabled}"
   } >"$file"
-  echo "wrote: $file"
+  echo "wrote: $file (enabled=${enabled})"
 }
 
 disable_official
@@ -115,6 +117,17 @@ if [[ "$WITH_INTERNAL" == "1" ]]; then
     "Internal packages (local mirror)" \
     "/repos/internal/" \
     "0"
+fi
+
+if [[ "$WITH_ARCHIVE" == "1" ]]; then
+  write_repo "RedOS8-Archive-Base-local" \
+    "Local RED OS 8 Base ARCHIVE (old packages)" \
+    "/archive/redos8/redos8_base_src/" \
+    "1" "0"
+  write_repo "RedOS8-Archive-Updates-local" \
+    "Local RED OS 8 Updates ARCHIVE (old packages)" \
+    "/archive/redos8/redos8_updates_src/" \
+    "1" "0"
 fi
 
 echo "== Проверка HTTPS =="

@@ -106,9 +106,11 @@ log "Установка пакетов"
 dnf install -y httpd mod_ssl createrepo_c dnf-utils policycoreutils-python-utils openssl
 
 # --- каталоги ---
-log "Каталоги зеркала на ${STORAGE_ROOT}"
+ARCHIVE_ROOT="${ARCHIVE_ROOT:-/var/local-repo-archive}"
+log "Каталоги зеркала на ${STORAGE_ROOT}, архив на ${ARCHIVE_ROOT}"
 mkdir -p "$DESTDIR" "$INTERNAL/rpms" "$LOG_DIR" /var/www/html \
-  "${STORAGE_ROOT}/ca" /etc/pki/tls/certs /etc/pki/tls/private
+  "${STORAGE_ROOT}/ca" /etc/pki/tls/certs /etc/pki/tls/private \
+  "${ARCHIVE_ROOT}/redos8" "${ARCHIVE_ROOT}/reports"
 
 if [[ -e "$WEB_REPOS" && ! -L "$WEB_REPOS" ]]; then
   die "${WEB_REPOS} уже существует и это не symlink. Перенесите: mv ${WEB_REPOS} ${WEB_REPOS}.bak"
@@ -118,9 +120,12 @@ ln -sfn "$STORAGE_ROOT" "$WEB_REPOS"
 semanage fcontext -a -t httpd_sys_content_t "${STORAGE_ROOT}(/.*)?" 2>/dev/null \
   || semanage fcontext -m -t httpd_sys_content_t "${STORAGE_ROOT}(/.*)?" 2>/dev/null \
   || true
-restorecon -Rv "$STORAGE_ROOT" >/dev/null || true
-chown -R root:apache "$STORAGE_ROOT"
-chmod -R 755 "$STORAGE_ROOT"
+semanage fcontext -a -t httpd_sys_content_t "${ARCHIVE_ROOT}(/.*)?" 2>/dev/null \
+  || semanage fcontext -m -t httpd_sys_content_t "${ARCHIVE_ROOT}(/.*)?" 2>/dev/null \
+  || true
+restorecon -Rv "$STORAGE_ROOT" "$ARCHIVE_ROOT" >/dev/null || true
+chown -R root:apache "$STORAGE_ROOT" "$ARCHIVE_ROOT"
+chmod -R 755 "$STORAGE_ROOT" "$ARCHIVE_ROOT"
 
 # --- hosts ---
 if [[ -n "${HOST_IP:-}" ]]; then
@@ -233,6 +238,14 @@ cat > /etc/httpd/conf.d/ssl-repo.conf << EOF
         AllowOverride None
         Require ip ${REPO_NET}
     </Directory>
+
+    # Архив старых RPM (раздел /var)
+    Alias /archive ${ARCHIVE_ROOT}
+    <Directory "${ARCHIVE_ROOT}">
+        Options Indexes FollowSymLinks
+        AllowOverride None
+        Require ip ${REPO_NET}
+    </Directory>
 </VirtualHost>
 EOF
 
@@ -283,44 +296,18 @@ gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
 enabled=0
 EOF
 
-# --- sync-скрипт + cron ---
-log "Установка sync-скрипта и cron"
+# --- sync-скрипт (с архивацией на /var) + cron ---
+log "Установка sync-скрипта (ARCHIVE=1 → /var/local-repo-archive) и cron"
 SYNC_SRC="${SCRIPT_DIR}/sync-redos8-repos.sh"
-if [[ -f "$SYNC_SRC" ]]; then
-  install -m 750 "$SYNC_SRC" /usr/local/sbin/sync-redos8-repos.sh
-else
-  cat > /usr/local/sbin/sync-redos8-repos.sh << 'SYNCEOF'
-#!/bin/bash
-set -euo pipefail
-DESTDIR="${DESTDIR:-/opt/repos/redos8}"
-REPOIDS="${REPOIDS:-redos8_base_src redos8_updates_src}"
-NEWEST="${NEWEST:-1}"
-LOG_DIR="${LOG_DIR:-/var/log/local-repo}"
-LOG="${LOG_DIR}/sync-$(date +%F).log"
-mkdir -p "$LOG_DIR" "$DESTDIR"
-exec >>"$LOG" 2>&1
-echo "=== $(date -Is) sync start ==="
-dnf makecache || true
-SYNC_OPTS=(--downloadcomps --download-metadata -p "$DESTDIR")
-[[ "$NEWEST" == "1" ]] && SYNC_OPTS+=(--newest-only --delete)
-for REPOID in $REPOIDS; do
-  [[ -d "$DESTDIR/$REPOID/.repodata" ]] && rm -rf "$DESTDIR/$REPOID/.repodata"
-  reposync --repo "$REPOID" "${SYNC_OPTS[@]}"
-  if [[ -f "$DESTDIR/$REPOID/comps.xml" ]]; then
-    createrepo -v --compress-type=zstd --general-compress-type=zstd "$DESTDIR/$REPOID" -g comps.xml
-  else
-    createrepo -v --compress-type=zstd --general-compress-type=zstd "$DESTDIR/$REPOID"
-  fi
-done
-chown -R root:apache "$(dirname "$DESTDIR")" || true
-restorecon -Rv "$(dirname "$DESTDIR")" >/dev/null 2>&1 || true
-echo "=== $(date -Is) sync done ==="
-SYNCEOF
-  chmod 750 /usr/local/sbin/sync-redos8-repos.sh
+[[ -f "$SYNC_SRC" ]] || die "Нет $SYNC_SRC — скопируйте весь каталог docs/scripts/local-repo/"
+install -m 750 "$SYNC_SRC" /usr/local/sbin/sync-redos8-repos.sh
+if [[ -f "${SCRIPT_DIR}/repo-archive-tool.sh" ]]; then
+  install -m 755 "${SCRIPT_DIR}/repo-archive-tool.sh" /usr/local/sbin/repo-archive-tool.sh
 fi
 
+# nightly sync: newest + archive old RPMs to /var
 cat > /etc/cron.d/redos8-local-repo << 'EOF'
-30 2 * * * root /usr/local/sbin/sync-redos8-repos.sh
+30 2 * * * root ARCHIVE=1 NEWEST=1 /usr/local/sbin/sync-redos8-repos.sh
 EOF
 chmod 644 /etc/cron.d/redos8-local-repo
 
@@ -386,6 +373,24 @@ gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
 sslverify=1
 enabled=1
 REPO
+cat > /etc/yum.repos.d/RedOS8-Archive-Base-local.repo << REPO
+[RedOS8-Archive-Base-local]
+name=Local RED OS 8 Base ARCHIVE (old packages)
+baseurl=https://${REPO_FQDN}/archive/redos8/redos8_base_src/
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
+sslverify=1
+enabled=0
+REPO
+cat > /etc/yum.repos.d/RedOS8-Archive-Updates-local.repo << REPO
+[RedOS8-Archive-Updates-local]
+name=Local RED OS 8 Updates ARCHIVE (old packages)
+baseurl=https://${REPO_FQDN}/archive/redos8/redos8_updates_src/
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
+sslverify=1
+enabled=0
+REPO
 
 curl -fsSI "https://\${REPO_HOST}/repos/redos8/redos8_base_src/repodata/repomd.xml" | head -n1 \\
   || echo "Предупреждение: repomd.xml пока недоступен (зеркало ещё качается?)" >&2
@@ -394,6 +399,7 @@ dnf clean all
 dnf makecache
 dnf repolist
 echo "OK → https://${REPO_FQDN}/"
+echo "Старые пакеты: dnf install PKG --enablerepo=RedOS8-Archive-Base-local,RedOS8-Archive-Updates-local"
 EOF
 chmod 755 /usr/local/sbin/configure-repo-client.sh
 
@@ -404,19 +410,30 @@ HOST_IP=${HOST_IP:-}
 REPO_NET=${REPO_NET}
 SSL_CRT_SRC=${SSL_CRT}
 URL=https://${REPO_FQDN}/repos/redos8/
+ARCHIVE_URL=https://${REPO_FQDN}/archive/redos8/
+ARCHIVE_ROOT=${ARCHIVE_ROOT}
 CA_FOR_CLIENTS=${STORAGE_ROOT}/ca/
 SYNC=/usr/local/sbin/sync-redos8-repos.sh
+ARCHIVE_TOOL=/usr/local/sbin/repo-archive-tool.sh
 CLIENT_HELPER=/usr/local/sbin/configure-repo-client.sh
 EOF
 
 # --- первичная синхронизация ---
+# Первый прогон: полное зеркало (NEWEST=0) без архивации superseded.
+# Дальше cron: NEWEST=1 ARCHIVE=1 — старые RPM уходят на /var.
 if [[ "$SKIP_SYNC" != "1" ]]; then
   log "Первичное зеркалирование (NEWEST=${NEWEST}) — это ДОЛГО и много места"
   echo "Лог: ${LOG_DIR}/sync-$(date +%F).log"
-  NEWEST="$NEWEST" DESTDIR="$DESTDIR" /usr/local/sbin/sync-redos8-repos.sh
+  if [[ "$NEWEST" == "1" ]]; then
+    ARCHIVE=1 NEWEST=1 DESTDIR="$DESTDIR" ARCHIVE_ROOT="$ARCHIVE_ROOT" \
+      /usr/local/sbin/sync-redos8-repos.sh
+  else
+    ARCHIVE=0 NEWEST=0 DESTDIR="$DESTDIR" \
+      /usr/local/sbin/sync-redos8-repos.sh
+  fi
 else
   log "SKIP_SYNC=1 — зеркалирование пропущено"
-  echo "Запустите позже: NEWEST=0 /usr/local/sbin/sync-redos8-repos.sh"
+  echo "Запустите позже: NEWEST=0 ARCHIVE=0 /usr/local/sbin/sync-redos8-repos.sh"
 fi
 
 # --- проверка ---
@@ -424,6 +441,7 @@ log "Проверка HTTPS"
 set +e
 curl -Ik "https://${REPO_FQDN}/" 2>&1 | head -n 5
 curl -Ik "https://${REPO_FQDN}/repos/redos8/" 2>&1 | head -n 5
+curl -Ik "https://${REPO_FQDN}/archive/" 2>&1 | head -n 5
 set -e
 
 echo
@@ -432,19 +450,20 @@ echo " ГОТОВО"
 echo "================================================================"
 echo " Имя узла (из серта/системы): ${REPO_FQDN}"
 echo " IP:                          ${HOST_IP:-?}"
-echo " URL:                         https://${REPO_FQDN}/repos/redos8/"
-echo " Пакеты:                      ${DESTDIR}"
+echo " Актуальные пакеты:           https://${REPO_FQDN}/repos/redos8/"
+echo " Архив старых (на /var):      https://${REPO_FQDN}/archive/redos8/"
+echo " Каталог архива:              ${ARCHIVE_ROOT}"
+echo " Отчёты sync:                 ${ARCHIVE_ROOT}/reports/latest.txt"
+echo " Утилита архива:              /usr/local/sbin/repo-archive-tool.sh"
 echo " CA для клиентов:             ${STORAGE_ROOT}/ca/"
 echo " Клиентский скрипт:           /usr/local/sbin/configure-repo-client.sh"
 echo
 echo " На КЛИЕНТЕ:"
 echo "   scp root@${HOST_IP:-ЗЕРКАЛО}:/opt/repos/ca/uibrep-ca.crt /tmp/"
 echo "   scp root@${HOST_IP:-ЗЕРКАЛО}:/usr/local/sbin/configure-repo-client.sh /tmp/"
-echo "   # затем на клиенте от root:"
-echo "   install -m 644 /tmp/uibrep-ca.crt /opt/repos/ca/uibrep-ca.crt 2>/dev/null || \\"
-echo "     mkdir -p /opt/repos/ca && install -m 644 /tmp/uibrep-ca.crt /opt/repos/ca/uibrep-ca.crt"
-echo "   REPO_IP=${HOST_IP:-IP_ЗЕРКАЛА} bash /tmp/configure-repo-client.sh"
+echo "   REPO_IP=${HOST_IP:-IP_ЗЕРКАЛА} CA_FILE=/tmp/uibrep-ca.crt bash /tmp/configure-repo-client.sh"
 echo
-echo " Либо одной командой с зеркала (если есть ssh):"
-echo "   ssh root@КЛИЕНТ 'bash -s' < /usr/local/sbin/configure-repo-client.sh"
+echo " Старый пакет на клиенте:"
+echo "   dnf install PKG --enablerepo=RedOS8-Archive-Base-local,RedOS8-Archive-Updates-local"
+echo " Или скачать: https://${REPO_FQDN}/archive/redos8/<repoid>/<file.rpm>"
 echo "================================================================"

@@ -14,6 +14,8 @@
 |------|------------|
 | [`docs/configs/local-repo/`](configs/local-repo/) | `.repo`, httpd HTTP/HTTPS |
 | [`docs/scripts/local-repo/`](scripts/local-repo/) | bootstrap / SSL / sync / клиент |
+| [`redos8-repo-archive.md`](redos8-repo-archive.md) | архив старых RPM на `/var` при обновлении зеркала |
+| [`redos8-uibrep-runbook.md`](redos8-uibrep-runbook.md) | готовый запуск с `uibrep.crt` / `uibrep.key` |
 
 ---
 

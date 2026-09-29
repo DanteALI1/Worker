@@ -157,14 +157,41 @@ dnf install -y tree
 
 ---
 
-## Шаг 5. Дальнейшая эксплуатация
+## Шаг 5. Архив старых пакетов на `/var`
+
+При ночных обновлениях (`NEWEST=1`) пакеты, которые исчезают из актуального зеркала, **не удаляются**, а переносятся в:
+
+```text
+/var/local-repo-archive/redos8/
+URL: https://<FQDN>/archive/redos8/
+```
+
+Подробно: [`redos8-repo-archive.md`](redos8-repo-archive.md).
+
+```bash
+# что ушло в архив при последнем sync
+cat /var/local-repo-archive/reports/latest.txt
+
+# поиск / URL
+repo-archive-tool.sh search openssl
+repo-archive-tool.sh url имя-пакета.rpm
+
+# на клиенте поставить старую версию
+dnf install PKG --enablerepo=RedOS8-Archive-Base-local,RedOS8-Archive-Updates-local
+```
+
+Хранение по умолчанию: **180 дней** (`ARCHIVE_KEEP_DAYS`).
+
+## Шаг 6. Дальнейшая эксплуатация
 
 | Задача | Команда |
 |--------|---------|
-| Ночной sync | уже в cron `02:30` → `/usr/local/sbin/sync-redos8-repos.sh` |
-| Ручной sync | `/usr/local/sbin/sync-redos8-repos.sh` |
+| Ночной sync + архив | cron `02:30` → `ARCHIVE=1 NEWEST=1 sync-redos8-repos.sh` |
+| Ручной sync | `ARCHIVE=1 NEWEST=1 /usr/local/sbin/sync-redos8-repos.sh` |
 | Параметры деплоя | `cat /opt/repos/DEPLOY.txt` |
 | Лог sync | `/var/log/local-repo/sync-ДАТА.log` |
+| Отчёт архива | `cat /var/local-repo-archive/reports/latest.txt` |
+| Место архива | `repo-archive-tool.sh du` |
 
 ---
 
