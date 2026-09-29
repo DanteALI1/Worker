@@ -40,6 +40,27 @@ bash install.sh
 
 Также создаётся `/opt/netbox-wiki/.env` (права `600`).
 
+## Полное удаление
+
+```bash
+cd /path/to/Worker/docker
+bash uninstall.sh
+```
+
+Без вопросов + удалить образы стека:
+
+```bash
+ASSUME_YES=1 REMOVE_IMAGES=1 bash uninstall.sh
+```
+
+Удалить также Docker с сервера:
+
+```bash
+ASSUME_YES=1 REMOVE_IMAGES=1 REMOVE_DOCKER=1 bash uninstall.sh
+```
+
+`uninstall.sh` останавливает контейнеры, удаляет volumes/сети, каталог `/opt/netbox-wiki` (креды, `.env`, сертификаты) и закрывает порты в firewalld.
+
 ## Свои сертификаты
 
 Вариант A — файлы в репозитории перед запуском:
@@ -118,6 +139,7 @@ docker compose --env-file .env up -d
 ```text
 docker/
   install.sh                 # главный установщик
+  uninstall.sh               # полное удаление стека
   certs/                     # ваши server.crt / server.key (опционально)
   templates/
     docker-compose.yml
