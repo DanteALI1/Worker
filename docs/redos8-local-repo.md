@@ -9,12 +9,12 @@
 - [Локальный репозиторий по HTTPS](https://redos.red-soft.ru/base/redos-8_0/8_0-administation/8_0-repo/8_0-create-repo-https/)
 - [Источники программ (репозитории)](https://redos.red-soft.ru/base/redos-8_0/8_0-base-consept/8_0-sys-dnf/8_0-gen-info-dnf/8_0-dnf-repo/)
 
-В репозитории рядом лежат готовые файлы:
+Готовые файлы в этом репозитории:
 
 | Путь | Назначение |
 |------|------------|
-| [`docs/configs/local-repo/`](configs/local-repo/) | `.repo`-файлы источников и клиентов, пример `httpd` |
-| [`docs/scripts/local-repo/`](scripts/local-repo/) | скрипт зеркалирования и установка на клиентах |
+| [`docs/configs/local-repo/`](configs/local-repo/) | `.repo` источников и клиентов, фрагмент `httpd` |
+| [`docs/scripts/local-repo/`](scripts/local-repo/) | bootstrap / sync / настройка клиентов |
 
 ---
 
@@ -25,12 +25,13 @@
         │
         │  reposync (только сервер-зеркало)
         ▼
-┌───────────────────────────────────────┐
-│  Сервер-зеркало РЕД ОС 8              │
-│  IP: 10.0.0.10  (замените на свой)    │
-│  httpd → http://10.0.0.10/repos/…     │
-│  /var/www/html/repos/redos8/          │
-└───────────────────────────────────────┘
+┌────────────────────────────────────────────┐
+│  Сервер-зеркало РЕД ОС 8                   │
+│  IP: 10.0.0.10  (замените на свой)         │
+│  Данные:  /opt/repos/redos8/               │
+│  Web:     /var/www/html/repos → /opt/repos │
+│  URL:     http://10.0.0.10/repos/…         │
+└────────────────────────────────────────────┘
         │
         │  dnf install / dnf update (HTTP)
         ▼
@@ -42,107 +43,91 @@
 
 **Роли:**
 
-1. **Сервер-зеркало** — единственный хост с доступом в Интернет (желательно). Скачивает Base, Updates и доп. ветки, публикует их по HTTP.
-2. **Клиенты** — остальные серверы РЕД ОС 8 в `10.0.0.0/8`. Берут пакеты только с зеркала, официальные URL отключены.
+1. **Сервер-зеркало** — желательно единственный хост с доступом в Интернет. Скачивает Base, Updates (и при необходимости extras), отдаёт по HTTP.
+2. **Клиенты** — остальные серверы РЕД ОС 8 в `10.0.0.0/8`. Берут пакеты только с зеркала; официальные URL отключены.
 
-**Параметры по умолчанию в гайде** (замените под себя):
+**Параметры по умолчанию** (замените под себя):
 
 | Параметр | Значение |
 |----------|----------|
 | IP зеркала | `10.0.0.10` |
 | Сеть клиентов | `10.0.0.0/8` |
-| Каталог пакетов | `/opt/repos/redos8/` → symlink `/var/www/html/repos` (или сразу `/var/www/html/repos`) |
+| Хранилище пакетов | `/opt/repos/` |
+| Каталог зеркала | `/opt/repos/redos8/` |
+| Каталог своих RPM | `/opt/repos/internal/` |
+| Публикация httpd | `/var/www/html/repos` → symlink на `/opt/repos` |
 | Редакция | **Стандартная** (`8.0`, не `8.0c`) |
 | Архитектура | `x86_64` |
-| Протокол | HTTP (для закрытой сети достаточно; HTTPS — раздел 10) |
+| Протокол | HTTP (HTTPS — раздел 10) |
 
-> Если у вас не `/8`, а например `10.0.0.0/24`, везде подставьте свой префикс в правилах firewalld.
+> Если сеть не `/8`, а например `10.0.0.0/24`, подставьте свой префикс в firewalld и в `httpd-local-repo.conf`.
 
 ---
 
-## 2. Требования к серверу-зеркалу
+## 2. Требования и диск
 
 | Требование | Рекомендация |
 |------------|--------------|
 | ОС | РЕД ОС 8, «Сервер минимальный», стандартная редакция |
-| Диск | Смотрите реальный размер через `dnf repoinfo` (часто **~300–400 ГБ** на все подключённые ветки; Base+Updates обычно основная масса). Нужен запас **+20–30%** под рост updates |
-| Сеть | Статический IP в `10.0.0.0/8`, доступ в Интернет для `reposync` |
-| RAM | 2 ГБ+ (минимальный сервер обычно хватает) |
-| Права | все команды от `root` (`su -` или `sudo su -`) |
+| Диск | Реальный размер — через `dnf repoinfo` (все ветки часто **~300–400 ГБ**). Запас **+20–30%** |
+| Сеть | Статический IP в `10.0.0.0/8`, Интернет для `reposync` |
+| RAM | 2 ГБ+ |
+| Права | команды от `root` (`su -` или `sudo su -`) |
 
-### Куда класть пакеты (выбор раздела)
-
-Сначала оцените размер и свободное место:
+### Оценка размера
 
 ```bash
-df -hT /
-df -hT /var /opt /home 2>/dev/null
+df -hT / /var /opt /home
 
-# По каждому репозиторию
 dnf repoinfo | grep -iE '^(идентификатор репозитория|Repo-id|размер.*репозитория|Repo-size)'
 
-# Сумма всех подключённых (если вывод в G/M на русском)
 dnf repoinfo | grep -iE 'размер.*репозитория' | awk -F ':' '{
   size = $2; sub(/M$/, "", size);
   if (index($2, "M") > 0) total += size / 1024; else total += size
 } END { printf "Общий размер подключённых репозиториев: %.2f G\n", total }'
 ```
 
-Пример разметки сервера (ваши цифры могут совпадать):
+Пример разметки (типичный сервер с отдельными `/var` и `/opt`):
 
 | Точка монтирования | Свободно (примерно) | Для зеркала ~392 ГБ |
 |--------------------|---------------------|---------------------|
-| `/` (`/dev/sda4`) | ~90 ГБ | **нет** |
+| `/` | ~90 ГБ | **нет** |
 | `/home` | ~93 ГБ | **нет** |
 | `/var` | ~840 ГБ | да |
-| `/opt` | ~878 ГБ | **да, предпочтительно** |
+| `/opt` | ~878 ГБ | **да — сюда** |
 
-**Рекомендация:** хранить пакеты на **`/opt/repos`**, а для `httpd` сделать симлинк в `/var/www/html/repos`. Так `/var` остаётся свободным под логи, journal, БД и кэш, а самое большое пустое место (`/opt`) используется под зеркало.
+**Всегда используйте `/opt/repos`**, если `/opt` — самый большой свободный раздел. `/var` оставьте под логи, journal и сервисы.
 
-```bash
-mkdir -p /opt/repos/redos8 /opt/repos/internal/rpms
-mkdir -p /var/www/html
-ln -sfn /opt/repos /var/www/html/repos
-
-# SELinux: httpd должен читать /opt/repos
-dnf install -y policycoreutils-python-utils
-semanage fcontext -a -t httpd_sys_content_t "/opt/repos(/.*)?"
-restorecon -Rv /opt/repos
-chown -R root:apache /opt/repos
-chmod -R 755 /opt/repos
-```
-
-URL для клиентов не меняется: `http://10.0.0.10/repos/redos8/...` (симлинк прозрачен для httpd).
-
-Альтернатива — писать сразу в `/var/www/html/repos` на разделе `/var`, если `/opt` занят другими сервисами. **Не** кладите зеркало на `/` или `/home` при размере ~400 ГБ.
-
-> `392 G` — это **все** подключённые репозитории. Для раздачи обновлений обычно достаточно **Base + Updates**. Посмотрите размеры по ID:
->
-> ```bash
-> dnf repoinfo base updates 2>/dev/null | grep -iE '^(идентификатор|Repo-id|размер|Repo-size)'
-> # или реальные ID из: dnf repolist --all
-> ```
->
-> С `--newest-only` (как в скрипте sync) диск занимает меньше, чем полное историческое зеркало.
+> ~392 ГБ — это **все** подключённые ветки. Для раздачи обновлений обычно достаточно **Base + Updates**. С `--newest-only` (скрипт sync) места нужно меньше, чем для полного исторического зеркала.
 
 ---
 
 ## 3. Подготовка сервера-зеркала
 
-### 3.1. Базовая настройка
+### Вариант A — скрипт (рекомендуется)
+
+Скопируйте на сервер каталог `docs/scripts/local-repo` и `docs/configs/local-repo`, затем:
+
+```bash
+cd /path/to/Worker/docs/scripts/local-repo
+REPO_NET=10.0.0.0/8 bash bootstrap-mirror-server.sh
+```
+
+Скрипт установит пакеты, поднимет httpd/firewalld, создаст `/opt/repos`, symlink, SELinux-контекст, source `.repo`, sync в cron.
+
+### Вариант B — вручную
+
+#### 3.1. Базовая настройка
 
 ```bash
 su -
 
 hostnamectl set-hostname repo.local
 timedatectl set-timezone Europe/Moscow
-
-# Статический IP — через nmcli / ваши настройки сети.
-# Пример: 10.0.0.10/8, шлюз 10.0.0.1
 ip -br a
 ```
 
-### 3.2. Пакеты для зеркала
+#### 3.2. Пакеты
 
 ```bash
 dnf install -y httpd createrepo_c dnf-utils policycoreutils-python-utils
@@ -150,40 +135,42 @@ dnf install -y httpd createrepo_c dnf-utils policycoreutils-python-utils
 
 | Пакет | Зачем |
 |-------|--------|
-| `httpd` | раздача каталога репозитория по HTTP |
+| `httpd` | раздача по HTTP |
 | `createrepo_c` | метаданные (`createrepo`) |
 | `dnf-utils` | `reposync` |
-| `policycoreutils-python-utils` | `semanage` для SELinux (если каталог не стандартный) |
+| `policycoreutils-python-utils` | `semanage` для SELinux на `/opt/repos` |
 
-### 3.3. Запуск httpd и firewalld
+#### 3.3. httpd и firewalld
 
 ```bash
 systemctl enable --now httpd
 systemctl enable --now firewalld
 
-# Доступ к HTTP только из внутренней сети
 firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="10.0.0.0/8" service name="http" accept'
 firewall-cmd --reload
 firewall-cmd --list-all
 ```
 
-Если rich-rule неудобен, можно открыть HTTP глобально (хуже для периметра):
+Опционально ограничить каталог репозитория в httpd — скопируйте [`httpd-local-repo.conf`](configs/local-repo/httpd-local-repo.conf) в `/etc/httpd/conf.d/local-repo.conf` и выполните `apachectl configtest && systemctl reload httpd`.
+
+#### 3.4. Каталог зеркала на `/opt`
 
 ```bash
-firewall-cmd --permanent --add-service=http
-firewall-cmd --reload
+mkdir -p /opt/repos/redos8 /opt/repos/internal/rpms /var/www/html /var/log/local-repo
+ln -sfn /opt/repos /var/www/html/repos
+
+semanage fcontext -a -t httpd_sys_content_t "/opt/repos(/.*)?" 2>/dev/null \
+  || semanage fcontext -m -t httpd_sys_content_t "/opt/repos(/.*)?"
+restorecon -Rv /opt/repos
+
+chown -R root:apache /opt/repos
+chmod -R 755 /opt/repos
+
+ls -la /var/www/html/repos
+# должен показать symlink → /opt/repos
 ```
 
-### 3.4. Каталог зеркала
-
-```bash
-mkdir -p /var/www/html/repos/redos8
-chown -R root:apache /var/www/html/repos
-chmod -R 755 /var/www/html/repos
-restorecon -Rv /var/www/html/repos
-```
-
-Проверка с самого сервера:
+Проверка httpd:
 
 ```bash
 curl -I http://127.0.0.1/
@@ -194,31 +181,23 @@ curl -I http://127.0.0.1/
 
 ## 4. Какие ветки зеркалировать
 
-По умолчанию в РЕД ОС подключены:
-
 | Ветка | URL (фрагмент) | Нужно ли |
 |-------|----------------|----------|
-| **os** (Base) | `…/redos/8.0/$basearch/os` | **Да** — установка пакетов |
-| **updates** | `…/redos/8.0/$basearch/updates` | **Да** — обновления безопасности |
+| **os** (Base) | `…/redos/8.0/$basearch/os` | **Да** |
+| **updates** | `…/redos/8.0/$basearch/updates` | **Да** |
+| `extras` | `…/extras` | по необходимости |
+| `3rdparty` | сторонние пакеты без бюллетеней | осознанно |
+| `debuginfo` / `kernel-rt` | отладка / RT-ядро | редко |
 
-Дополнительно (по желанию):
+Для «обновления и пакеты установки на все сервера» достаточно **Base + Updates**.
 
-| Ветка | Назначение |
-|-------|------------|
-| `extras` | пакеты сверх базового набора |
-| `3rdparty` | сторонние бинарники «как есть», без бюллетеней безопасности |
-| `debuginfo` | отладочные пакеты |
-| `kernel-rt` | realtime-ядро |
-
-Для «распространять обновления и пакеты установки на все сервера» достаточно **Base + Updates**. Ниже зеркалируются они; `extras` добавлен как опциональный шаг.
-
-> **Сертифицированная** редакция: пути `8.0c` вместо `8.0` (см. официальную статью). Не смешивайте стандартную и сертифицированную на одних клиентах.
+> Сертифицированная редакция: в URL путь `8.0c` вместо `8.0`. Не смешивайте редакции на одних клиентах.
 
 ---
 
 ## 5. Источники для reposync (на зеркале)
 
-Создайте **отдельные** `.repo` с `enabled=0` — они нужны только `reposync`, не для установки пакетов на самом зеркале из Интернета в обычном режиме.
+Отдельные `.repo` с `enabled=0` — только для `reposync`:
 
 ```bash
 cat > /etc/yum.repos.d/redos8_base_src.repo << 'EOF'
@@ -240,22 +219,9 @@ enabled=0
 EOF
 ```
 
-Опционально — extras:
-
-```bash
-cat > /etc/yum.repos.d/redos8_extras_src.repo << 'EOF'
-[redos8_extras_src]
-name=RedOS 8 - Extras (Mirror source)
-baseurl=https://repo1.red-soft.ru/redos/8.0/$basearch/extras,https://mirror.yandex.ru/redos/8.0/$basearch/extras,http://repo.red-soft.ru/redos/8.0/$basearch/extras
-gpgcheck=1
-gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
-enabled=0
-EOF
-```
+Опционально extras — файл [`redos8_extras_src.repo`](configs/local-repo/sources/redos8_extras_src.repo).
 
 Готовые копии: [`docs/configs/local-repo/sources/`](configs/local-repo/sources/).
-
-Проверка ID:
 
 ```bash
 dnf repolist --all | grep -E 'redos8_(base|updates|extras)_src'
@@ -265,167 +231,133 @@ dnf repolist --all | grep -E 'redos8_(base|updates|extras)_src'
 
 ## 6. Первичное зеркалирование
 
-Перейдите в каталог и запустите синхронизацию. Первая загрузка может занять **много часов** и съесть десятки гигабайт.
+Первая загрузка может занять **много часов** и сотни гигабайт.
 
 ```bash
-cd /var/www/html/repos/redos8
+mkdir -p /opt/repos/redos8
+cd /opt/repos/redos8
 
-# Base (с comps для групп пакетов)
+# Полное зеркало Base
 reposync --repoid=redos8_base_src \
   --download-metadata --downloadcomps \
-  --download-path=/var/www/html/repos/redos8
+  --download-path=/opt/repos/redos8
 
-# Updates
+# Полное зеркало Updates
 reposync --repoid=redos8_updates_src \
   --download-metadata --downloadcomps \
-  --download-path=/var/www/html/repos/redos8
+  --download-path=/opt/repos/redos8
 ```
 
-Только новейшие версии пакетов (меньше места, хуже история версий):
+Только новейшие версии (меньше места):
 
 ```bash
 reposync --repoid=redos8_base_src \
   --download-metadata --downloadcomps --newest-only \
-  --download-path=/var/www/html/repos/redos8
+  --download-path=/opt/repos/redos8
 ```
 
-Метаданные после синхронизации:
+Метаданные:
 
 ```bash
 # Base — обязательно -g comps.xml
 createrepo -v --compress-type=zstd --general-compress-type=zstd \
-  /var/www/html/repos/redos8/redos8_base_src/ -g comps.xml
+  /opt/repos/redos8/redos8_base_src/ -g comps.xml
 
 # Updates
-createrepo -v --compress-type=zstd --general-compress-type=zstd \
-  /var/www/html/repos/redos8/redos8_updates_src/
+if [[ -f /opt/repos/redos8/redos8_updates_src/comps.xml ]]; then
+  createrepo -v --compress-type=zstd --general-compress-type=zstd \
+    /opt/repos/redos8/redos8_updates_src/ -g comps.xml
+else
+  createrepo -v --compress-type=zstd --general-compress-type=zstd \
+    /opt/repos/redos8/redos8_updates_src/
+fi
 ```
 
-Если для Updates есть `comps.xml`:
+Права:
 
 ```bash
-createrepo -v --compress-type=zstd --general-compress-type=zstd \
-  /var/www/html/repos/redos8/redos8_updates_src/ -g comps.xml
+chown -R root:apache /opt/repos
+chmod -R 755 /opt/repos
+restorecon -Rv /opt/repos
 ```
 
-Права и SELinux:
-
-```bash
-chown -R root:apache /var/www/html/repos
-chmod -R 755 /var/www/html/repos
-restorecon -Rv /var/www/html/repos
-```
-
-Проверка URL с зеркала или с клиента:
+Проверка (замените IP):
 
 ```bash
 curl -I http://10.0.0.10/repos/redos8/redos8_base_src/repodata/repomd.xml
 curl -I http://10.0.0.10/repos/redos8/redos8_updates_src/repodata/repomd.xml
+# ожидается HTTP/1.1 200 OK
+
+df -h /opt
+du -sh /opt/repos/redos8/*
 ```
 
-Ожидается `HTTP/1.1 200 OK`.
+Либо одной командой через скрипт:
+
+```bash
+# полное зеркало
+NEWEST=0 /usr/local/sbin/sync-redos8-repos.sh
+
+# или только newest (меньше места)
+/usr/local/sbin/sync-redos8-repos.sh
+```
 
 ---
 
 ## 7. Автоматическая синхронизация (cron)
 
-Скопируйте скрипт [`docs/scripts/local-repo/sync-redos8-repos.sh`](scripts/local-repo/sync-redos8-repos.sh) на сервер:
+Установите скрипт [`sync-redos8-repos.sh`](scripts/local-repo/sync-redos8-repos.sh):
 
 ```bash
 install -m 750 /path/to/sync-redos8-repos.sh /usr/local/sbin/sync-redos8-repos.sh
 mkdir -p /var/log/local-repo
-```
 
-Или создайте вручную:
-
-```bash
-cat > /usr/local/sbin/sync-redos8-repos.sh << 'EOF'
-#!/bin/bash
-set -euo pipefail
-
-DESTDIR=/var/www/html/repos/redos8
-# Добавьте redos8_extras_src при необходимости
-REPOIDS="redos8_base_src redos8_updates_src"
-LOG=/var/log/local-repo/sync-$(date +%F).log
-
-mkdir -p "$(dirname "$LOG")" "$DESTDIR"
-exec >>"$LOG" 2>&1
-
-echo "=== $(date -Is) sync start ==="
-dnf makecache || true
-
-for REPOID in $REPOIDS; do
-  echo "--- sync $REPOID ---"
-  if [[ -d "$DESTDIR/$REPOID/.repodata" ]]; then
-    rm -rf "$DESTDIR/$REPOID/.repodata"
-  fi
-  # --newest-only --delete: только актуальные пакеты, удаление устаревших
-  reposync --repo "$REPOID" --newest-only --delete \
-    --downloadcomps --download-metadata -p "$DESTDIR"
-
-  if [[ -f "$DESTDIR/$REPOID/comps.xml" ]]; then
-    createrepo -v --compress-type=zstd --general-compress-type=zstd \
-      "$DESTDIR/$REPOID" -g comps.xml
-  else
-    createrepo -v --compress-type=zstd --general-compress-type=zstd \
-      "$DESTDIR/$REPOID"
-  fi
-done
-
-chown -R root:apache "$DESTDIR"
-restorecon -Rv "$DESTDIR" >/dev/null || true
-echo "=== $(date -Is) sync done ==="
-EOF
-
-chmod 750 /usr/local/sbin/sync-redos8-repos.sh
-```
-
-Cron — каждую ночь в 02:30:
-
-```bash
 cat > /etc/cron.d/redos8-local-repo << 'EOF'
 30 2 * * * root /usr/local/sbin/sync-redos8-repos.sh
 EOF
 chmod 644 /etc/cron.d/redos8-local-repo
 ```
 
-Первый прогон вручную:
+Скрипт по умолчанию пишет в **`/opt/repos/redos8`**, использует `--newest-only --delete`.
+
+Переменные:
+
+| Переменная | По умолчанию | Смысл |
+|------------|--------------|--------|
+| `DESTDIR` | `/opt/repos/redos8` | куда качать |
+| `REPOIDS` | `redos8_base_src redos8_updates_src` | список веток |
+| `NEWEST` | `1` | `0` = полное зеркало |
 
 ```bash
-/usr/local/sbin/sync-redos8-repos.sh
+REPOIDS="redos8_base_src redos8_updates_src redos8_extras_src" \
+  /usr/local/sbin/sync-redos8-repos.sh
+
 tail -f /var/log/local-repo/sync-$(date +%F).log
 ```
 
 ---
 
-## 8. Настройка клиентов (все серверы в 10.0.0.0)
+## 8. Настройка клиентов
 
-На **каждом** сервере РЕД ОС 8, который должен брать пакеты с зеркала.
+На **каждом** сервере РЕД ОС 8 в сети.
 
 ### 8.1. Отключить официальные репозитории
 
-Не удаляйте файлы — при обновлении пакетов они могут появиться снова. Отключите:
+Не удаляйте файлы — отключите:
 
 ```bash
-# Типичные имена на РЕД ОС 8
 for f in /etc/yum.repos.d/RedOS-Base.repo /etc/yum.repos.d/RedOS-Updates.repo; do
   [ -f "$f" ] || continue
   sed -i 's/^enabled=1/enabled=0/' "$f"
 done
 
-# На всякий случай — всё, что ещё смотрит в Интернет (кроме локальных)
 dnf config-manager --set-disabled RedOS-Base RedOS-Updates 2>/dev/null || true
-```
-
-Проверьте `enabled=` во всех файлах:
-
-```bash
 grep -nE '^\s*(enabled|baseurl|mirrorlist)=' /etc/yum.repos.d/*.repo
 ```
 
-### 8.2. Подключить локальные репозитории
+### 8.2. Подключить локальное зеркало
 
-Замените `10.0.0.10` на IP вашего зеркала:
+Замените `10.0.0.10` на IP зеркала:
 
 ```bash
 cat > /etc/yum.repos.d/RedOS8-Base-local.repo << 'EOF'
@@ -449,53 +381,42 @@ EOF
 
 Шаблоны: [`docs/configs/local-repo/clients/`](configs/local-repo/clients/).
 
-Скрипт массовой настройки: [`docs/scripts/local-repo/configure-client.sh`](scripts/local-repo/configure-client.sh).
+Скрипт:
 
 ```bash
-# На клиенте:
 REPO_HOST=10.0.0.10 bash configure-client.sh
+# с extras и internal:
+REPO_HOST=10.0.0.10 WITH_EXTRAS=1 WITH_INTERNAL=1 bash configure-client.sh
 ```
 
-### 8.3. Проверка на клиенте
+### 8.3. Проверка
 
 ```bash
 dnf clean all
 dnf makecache
 dnf repolist
 dnf check-update || true
-
-# Установка тестового пакета (пример)
 dnf install -y tree
-```
-
-`dnf makecache` должен завершиться **без ошибок**. В `repolist` должны быть `RedOS8-Base-local` и `RedOS8-Updates-local`, а официальные — disabled.
-
-Обновление системы с зеркала:
-
-```bash
 dnf update -y
 ```
 
+В `repolist` должны быть `RedOS8-Base-local` и `RedOS8-Updates-local`, официальные — disabled.
+
 ---
 
-## 9. Свой репозиторий внутренних RPM (установка «своих» пакетов)
-
-Помимо зеркала официальных пакетов, удобно держать каталог с вашими `.rpm` (агенты, внутренние сборки, offline-пакеты).
-
-На зеркале:
+## 9. Свой репозиторий внутренних RPM
 
 ```bash
-mkdir -p /var/www/html/repos/internal/rpms
-# Скопируйте RPM:
-# cp /path/to/*.rpm /var/www/html/repos/internal/rpms/
+mkdir -p /opt/repos/internal/rpms
+# cp /path/to/*.rpm /opt/repos/internal/rpms/
 
 createrepo -v --compress-type=zstd --general-compress-type=zstd \
-  /var/www/html/repos/internal/
-chown -R root:apache /var/www/html/repos/internal
-restorecon -Rv /var/www/html/repos/internal
+  /opt/repos/internal/
+chown -R root:apache /opt/repos/internal
+restorecon -Rv /opt/repos/internal
 ```
 
-После добавления новых RPM снова запускайте `createrepo` по каталогу `internal`.
+После добавления новых RPM снова запускайте `createrepo` для `/opt/repos/internal`.
 
 На клиентах:
 
@@ -512,107 +433,92 @@ dnf makecache
 dnf install -y имя-вашего-пакета
 ```
 
-> Для production лучше подписывать свои RPM и включить `gpgcheck=1` с вашим ключом.
+> В production лучше подписывать RPM и включить `gpgcheck=1`.
 
 ---
 
 ## 10. HTTPS (опционально)
 
-В закрытой сети `10.0.0.0` обычно хватает HTTP. Если нужен HTTPS — по [официальной инструкции](https://redos.red-soft.ru/base/redos-8_0/8_0-administation/8_0-repo/8_0-create-repo-https/):
+В закрытой сети обычно хватает HTTP. HTTPS — по [официальной инструкции](https://redos.red-soft.ru/base/redos-8_0/8_0-administation/8_0-repo/8_0-create-repo-https/):
 
 ```bash
 dnf install -y mod_ssl
-# Сертификат + ключ → /etc/pki/tls/certs/web_repo.cer
-#                    → /etc/pki/tls/private/web_repo.key
-# Настроить ServerName и пути в /etc/httpd/conf.d/ssl.conf
+# сертификат → /etc/pki/tls/certs/web_repo.cer
+# ключ       → /etc/pki/tls/private/web_repo.key
+# ServerName и пути в /etc/httpd/conf.d/ssl.conf
 firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="10.0.0.0/8" service name="https" accept'
 firewall-cmd --reload
 systemctl restart httpd
 ```
 
-На клиентах: `baseurl=https://…`, доверенный CA через `update-ca-trust`, либо временно `sslverify=0` для самоподписанного сертификата.
+На клиентах: `baseurl=https://…`, CA через `update-ca-trust`, либо временно `sslverify=0`.
 
 ---
 
-## 11. Установка РЕД ОС с локального зеркала (новые серверы)
+## 11. Установка РЕД ОС с локального зеркала
 
-Anaconda умеет ставить ОС из сетевого репозитория. После того как зеркало готово:
+1. Загрузка с ISO/USB РЕД ОС 8.
+2. Источник установки: `http://10.0.0.10/repos/redos8/redos8_base_src/`
+3. При необходимости Updates: `http://10.0.0.10/repos/redos8/redos8_updates_src/`
+4. После установки сразу раздел **8** (клиентские `.repo`).
 
-1. Загрузитесь с ISO/USB РЕД ОС 8.
-2. В разделе источников установки добавьте репозиторий:
-   - URL: `http://10.0.0.10/repos/redos8/redos8_base_src/`
-3. При необходимости добавьте Updates:  
-   `http://10.0.0.10/repos/redos8/redos8_updates_src/`
-4. После установки сразу примените раздел **8** (клиентские `.repo`), чтобы дальнейшие `dnf update` шли только с зеркала.
-
-Подробнее: [Установка РЕД ОС из репозитория](https://redos.red-soft.ru/base/redos-8_0/8_0-install/8_0-alter-install/8_0-install-redos-from-repo/) — там указаны официальные URL; у вас вместо них — IP зеркала.
+Справка: [Установка РЕД ОС из репозитория](https://redos.red-soft.ru/base/redos-8_0/8_0-install/8_0-alter-install/8_0-install-redos-from-repo/).
 
 ---
 
-## 12. Эксплуатация и чеклист
+## 12. Эксплуатация
 
-### Ежедневно / по cron
+### Чеклист
 
-- [ ] Скрипт `sync-redos8-repos.sh` отрабатывает без ошибок в `/var/log/local-repo/`
-- [ ] На клиентах `dnf check-update` видит пакеты с `RedOS8-*-local`
-
-### После крупных обновлений зеркала
-
-- [ ] `curl -I http://10.0.0.10/repos/redos8/redos8_base_src/repodata/repomd.xml`
-- [ ] На тестовом клиенте `dnf makecache && dnf update`
-
-### Диск
-
-```bash
-df -h /var/www/html/repos
-du -sh /var/www/html/repos/redos8/*
-```
+- [ ] `sync-redos8-repos.sh` без ошибок в `/var/log/local-repo/`
+- [ ] `curl -I http://10.0.0.10/repos/redos8/redos8_base_src/repodata/repomd.xml` → 200
+- [ ] На клиентах `dnf makecache` и `dnf check-update` с `RedOS8-*-local`
+- [ ] Место: `df -h /opt` и `du -sh /opt/repos/redos8/*`
 
 ### Типичные ошибки
 
 | Симптом | Что проверить |
 |---------|----------------|
-| `repomd.xml` 404 | не выполнен `createrepo`; неверный путь в `baseurl` |
-| Permission denied / 403 | права `apache`, SELinux `httpd_sys_content_t` |
-| Timeout с клиента | firewalld rich-rule / маршрутизация `10.0.0.0` |
-| Клиент всё ещё качает из Интернета | не отключён `RedOS-Base.repo` / `enabled=1` |
-| После `dnf update` снова официальные repo | появились `.rpmnew` или перезаписались файлы — снова `enabled=0`, локальные оставить |
-| GPG error | ключ `RPM-GPG-KEY-RED-SOFT` на месте; `gpgcheck=1` |
+| `repomd.xml` 404 | не выполнен `createrepo`; неверный `baseurl` |
+| 403 / Permission denied | права `apache`, SELinux на `/opt/repos` |
+| Timeout | firewalld rich-rule, маршрутизация |
+| Клиент качает из Интернета | официальные `.repo` с `enabled=1` |
+| После update снова официальные repo | `.rpmnew` / перезапись — снова `enabled=0` |
+| GPG error | ключ `RPM-GPG-KEY-RED-SOFT` |
+| Symlink не отдаётся | `Options FollowSymLinks` в httpd; `ls -la /var/www/html/repos` |
 
-SELinux для нестандартного каталога:
+SELinux (если сбросился контекст):
 
 ```bash
-semanage fcontext -a -t httpd_sys_content_t "/mnt/repodisk(/.*)?"
-restorecon -Rv /mnt/repodisk
+semanage fcontext -a -t httpd_sys_content_t "/opt/repos(/.*)?" 2>/dev/null \
+  || semanage fcontext -m -t httpd_sys_content_t "/opt/repos(/.*)?"
+restorecon -Rv /opt/repos
 ```
 
 ---
 
-## 13. Порядок работ «с нуля» (краткий чеклист)
+## 13. Порядок работ «с нуля»
 
-1. Выделить сервер РЕД ОС 8 minimal, IP `10.0.0.10`, диск ≥ 80–150 ГБ, Интернет.
-2. Установить `httpd createrepo_c dnf-utils`, включить httpd + firewalld (HTTP из `10.0.0.0/8`).
-3. Создать `/var/www/html/repos/redos8/`.
-4. Добавить `redos8_base_src.repo` и `redos8_updates_src.repo` (`enabled=0`).
-5. Выполнить `reposync` + `createrepo` для Base и Updates.
-6. Проверить `curl` к `repomd.xml`.
-7. Поставить `/usr/local/sbin/sync-redos8-repos.sh` в cron.
-8. На всех клиентах: отключить официальные repo, добавить локальные, `dnf makecache`.
-9. (Опционально) каталог `internal` для своих RPM.
-10. (Опционально) установка новых ОС с URL зеркала.
+1. Сервер РЕД ОС 8 minimal, IP `10.0.0.10`, свободное место на **`/opt` ≥ размера репозиториев + 20–30%**, Интернет.
+2. `bash bootstrap-mirror-server.sh` **или** вручную: пакеты, httpd, firewalld, `/opt/repos` + symlink.
+3. Source `.repo`: `redos8_base_src`, `redos8_updates_src` (`enabled=0`).
+4. `NEWEST=0 /usr/local/sbin/sync-redos8-repos.sh` (или ручной `reposync` + `createrepo` в `/opt/repos/redos8`).
+5. `curl` к `repomd.xml` → 200.
+6. Cron на sync уже стоит после bootstrap.
+7. На всех клиентах: `REPO_HOST=10.0.0.10 bash configure-client.sh`.
+8. (Опционально) `/opt/repos/internal` для своих RPM.
+9. (Опционально) установка новых ОС с URL зеркала.
 
 ---
 
-## 14. Что уточнить под вашу сеть
+## 14. Что подставить под свою сеть
 
-Если что-то из этого отличается — подставьте свои значения в конфиги и скрипты:
-
-1. **Точный IP зеркала** и префикс сети (`/8`, `/16`, `/24`).
-2. **Стандартная или сертифицированная** редакция (`8.0` vs `8.0c`).
-3. Нужны ли ветки **extras / 3rdparty** в полном объёме.
-4. Должно ли зеркало быть **единственным** выходом в Интернет, а клиенты — без внешнего доступа.
-5. Нужен ли **HTTPS** и свой CA.
-6. Нужна ли **сетевая установка** новых серверов с зеркала (Anaconda).
+1. Точный **IP зеркала** и префикс сети (`/8`, `/16`, `/24`).
+2. Редакция: **стандартная** (`8.0`) или **сертифицированная** (`8.0c`).
+3. Нужны ли **extras / 3rdparty**.
+4. Клиенты без Интернета (зеркало — единственный источник)?
+5. Нужен ли **HTTPS**.
+6. Нужна ли **сетевая установка** (Anaconda) с зеркала.
 
 ---
 

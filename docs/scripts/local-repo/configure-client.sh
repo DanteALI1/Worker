@@ -4,7 +4,7 @@
 #   REPO_HOST=10.0.0.10 bash configure-client.sh
 #
 # Опции:
-#   REPO_HOST     — IP или DNS зеркала (обязательно логически, по умолчанию 10.0.0.10)
+#   REPO_HOST     — IP или DNS зеркала (по умолчанию 10.0.0.10)
 #   WITH_EXTRAS   — 1 = подключить extras
 #   WITH_INTERNAL — 1 = подключить internal (свои RPM)
 #   PROTO         — http (по умолчанию) или https
@@ -26,16 +26,26 @@ fi
 
 disable_official() {
   local f
+  shopt -s nullglob
   for f in \
     "${REPO_DIR}/RedOS-Base.repo" \
     "${REPO_DIR}/RedOS-Updates.repo" \
-    "${REPO_DIR}/RedOS-Extras.repo"
+    "${REPO_DIR}/RedOS-Extras.repo" \
+    "${REPO_DIR}"/RedOS*.repo
   do
-    if [[ -f "$f" ]]; then
-      sed -i 's/^enabled=1/enabled=0/' "$f"
-      echo "disabled: $f"
+    # не трогаем уже локальные файлы
+    case "$(basename "$f")" in
+      *-local.repo|RedOS8-*-local.repo|Internal-local.repo) continue ;;
+    esac
+    if [[ -f "$f" ]] && grep -qE '^enabled=1' "$f"; then
+      # отключаем только официальные baseurl на red-soft / yandex
+      if grep -qE 'red-soft\.ru|mirror\.yandex\.ru' "$f"; then
+        sed -i 's/^enabled=1/enabled=0/' "$f"
+        echo "disabled: $f"
+      fi
     fi
   done
+  shopt -u nullglob
   dnf config-manager --set-disabled RedOS-Base RedOS-Updates 2>/dev/null || true
 }
 
@@ -89,3 +99,4 @@ dnf makecache
 dnf repolist
 
 echo "OK: клиент смотрит на ${PROTO}://${REPO_HOST}"
+echo "Проверка: curl -I ${PROTO}://${REPO_HOST}/repos/redos8/redos8_base_src/repodata/repomd.xml"

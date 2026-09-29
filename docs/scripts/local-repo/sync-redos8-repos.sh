@@ -7,13 +7,13 @@
 #   echo '30 2 * * * root /usr/local/sbin/sync-redos8-repos.sh' > /etc/cron.d/redos8-local-repo
 #
 # Переменные окружения (опционально):
-#   DESTDIR   — каталог зеркала (по умолчанию /var/www/html/repos/redos8)
+#   DESTDIR   — каталог зеркала (по умолчанию /opt/repos/redos8)
 #   REPOIDS   — список repoid через пробел
 #   NEWEST    — 1 (по умолчанию) = --newest-only --delete; 0 = полное зеркало
+#   LOG_DIR   — каталог логов (по умолчанию /var/log/local-repo)
 
 set -euo pipefail
 
-# По умолчанию /opt/repos/redos8 (symlink /var/www/html/repos → /opt/repos)
 DESTDIR="${DESTDIR:-/opt/repos/redos8}"
 REPOIDS="${REPOIDS:-redos8_base_src redos8_updates_src}"
 NEWEST="${NEWEST:-1}"
@@ -50,10 +50,11 @@ for REPOID in $REPOIDS; do
   fi
 done
 
+STORAGE_ROOT="$(dirname "$DESTDIR")"
 if id apache &>/dev/null; then
-  chown -R root:apache "$DESTDIR" || true
+  chown -R root:apache "$STORAGE_ROOT" || true
 fi
-chmod -R a+rX "$DESTDIR" || true
-restorecon -Rv "$DESTDIR" >/dev/null 2>&1 || true
+chmod -R a+rX "$STORAGE_ROOT" || true
+restorecon -Rv "$STORAGE_ROOT" >/dev/null 2>&1 || true
 
 echo "=== $(date -Is) sync done ==="
