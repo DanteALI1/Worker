@@ -1,6 +1,10 @@
 # Клиентские .repo — подключение к локальному зеркалу
-# Перед копированием замените 10.0.0.10 на IP вашего сервера-зеркала.
-# Официальные RedOS-Base.repo / RedOS-Updates.repo на клиенте должны иметь enabled=0.
+
+Перед копированием замените `10.0.0.10` на IP вашего сервера-зеркала.  
+Официальные `RedOS-Base.repo` / `RedOS-Updates.repo` на клиенте должны иметь `enabled=0`.
+
+Пути в `baseurl` (`/repos/redos8/...`) соответствуют symlink  
+`/var/www/html/repos` → `/opt/repos` на зеркале.
 
 ## Установка
 
@@ -21,4 +25,4 @@ dnf makecache
 dnf repolist
 ```
 
-Или используйте скрипт `docs/scripts/local-repo/configure-client.sh`.
+Или скрипт: `docs/scripts/local-repo/configure-client.sh`.
