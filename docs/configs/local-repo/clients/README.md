@@ -25,3 +25,12 @@ dnf clean all && dnf makecache && dnf repolist
 ```
 
 Или: `REPO_HOST=repo.example.ru PROTO=https CA_CERT=/path/ca-root.crt bash configure-client.sh`.
+
+## Архив старых пакетов (`enabled=0`)
+
+Файлы `RedOS8-Archive-*-local.repo` указывают на `https://FQDN/archive/redos8/...`
+(данные на зеркале в `/var/local-repo-archive`). По умолчанию выключены.
+
+```bash
+dnf install PKG --enablerepo=RedOS8-Archive-Base-local,RedOS8-Archive-Updates-local
+```
