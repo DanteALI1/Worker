@@ -13,8 +13,11 @@
 set -euo pipefail
 
 REPO_NET="${REPO_NET:-10.0.0.0/8}"
-DESTDIR="${DESTDIR:-/var/www/html/repos/redos8}"
-INTERNAL="${INTERNAL:-/var/www/html/repos/internal}"
+# По умолчанию пакеты на /opt (крупный раздел), наружу — через /var/www/html/repos
+STORAGE_ROOT="${STORAGE_ROOT:-/opt/repos}"
+WEB_REPOS="${WEB_REPOS:-/var/www/html/repos}"
+DESTDIR="${DESTDIR:-${STORAGE_ROOT}/redos8}"
+INTERNAL="${INTERNAL:-${STORAGE_ROOT}/internal}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCES_DIR="$(cd "${SCRIPT_DIR}/../../configs/local-repo/sources" 2>/dev/null && pwd || true)"
 
@@ -35,11 +38,21 @@ firewall-cmd --permanent --remove-service=http 2>/dev/null || true
 firewall-cmd --permanent --add-rich-rule="rule family=\"ipv4\" source address=\"${REPO_NET}\" service name=\"http\" accept"
 firewall-cmd --reload
 
-echo "== Каталоги =="
-mkdir -p "$DESTDIR" "$INTERNAL/rpms" /var/log/local-repo
-chown -R root:apache /var/www/html/repos
-chmod -R 755 /var/www/html/repos
-restorecon -Rv /var/www/html/repos || true
+echo "== Каталоги (STORAGE_ROOT=${STORAGE_ROOT}) =="
+mkdir -p "$DESTDIR" "$INTERNAL/rpms" /var/log/local-repo /var/www/html
+if [[ "$(readlink -f "$WEB_REPOS" 2>/dev/null || true)" != "$(readlink -f "$STORAGE_ROOT")" ]]; then
+  if [[ -e "$WEB_REPOS" && ! -L "$WEB_REPOS" ]]; then
+    echo "Внимание: $WEB_REPOS уже существует и не symlink — не перезаписываем" >&2
+  else
+    ln -sfn "$STORAGE_ROOT" "$WEB_REPOS"
+  fi
+fi
+semanage fcontext -a -t httpd_sys_content_t "${STORAGE_ROOT}(/.*)?" 2>/dev/null \
+  || semanage fcontext -m -t httpd_sys_content_t "${STORAGE_ROOT}(/.*)?" 2>/dev/null \
+  || true
+restorecon -Rv "$STORAGE_ROOT" || true
+chown -R root:apache "$STORAGE_ROOT"
+chmod -R 755 "$STORAGE_ROOT"
 
 if [[ -n "${SOURCES_DIR}" && -d "${SOURCES_DIR}" ]]; then
   echo "== Копирование source .repo из ${SOURCES_DIR} =="

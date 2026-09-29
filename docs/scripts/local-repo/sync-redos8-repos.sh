@@ -13,7 +13,8 @@
 
 set -euo pipefail
 
-DESTDIR="${DESTDIR:-/var/www/html/repos/redos8}"
+# По умолчанию /opt/repos/redos8 (symlink /var/www/html/repos → /opt/repos)
+DESTDIR="${DESTDIR:-/opt/repos/redos8}"
 REPOIDS="${REPOIDS:-redos8_base_src redos8_updates_src}"
 NEWEST="${NEWEST:-1}"
 LOG_DIR="${LOG_DIR:-/var/log/local-repo}"
