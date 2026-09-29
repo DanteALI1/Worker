@@ -1,0 +1,6 @@
+[redos8_base_src]
+name=RedOS 8 - Base (Mirror source)
+baseurl=https://repo1.red-soft.ru/redos/8.0/$basearch/os,https://mirror.yandex.ru/redos/8.0/$basearch/os,http://repo.red-soft.ru/redos/8.0/$basearch/os
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
+enabled=0
