@@ -1,20 +1,15 @@
 # Worker
 
-Документация по инфраструктуре на РЕД ОС 8:
+Локальный репозиторий РЕД ОС 8 (зеркало + архив старых пакетов + HTTPS).
 
-- **[Запуск у вас: uibrep.crt / uibrep.key](docs/redos8-uibrep-runbook.md)** — пошагово + один скрипт
-- **[Архив старых пакетов на /var](docs/redos8-repo-archive.md)** — перед обновлением зеркала старые RPM сохраняются
-- **[Полный гайд локального репозитория (HTTPS)](docs/redos8-local-repo.md)**
-- Конфиги: [`docs/configs/local-repo/`](docs/configs/local-repo/)
-- Скрипты: [`docs/scripts/local-repo/`](docs/scripts/local-repo/)
+**Инструкция:** [`docs/redos8-local-repo.md`](docs/redos8-local-repo.md)
 
-### Зеркало (ваши серты в `/home/svcsecadm`)
+### Зеркало
 
 ```bash
-# на сервере-зеркале от root:
-bash docs/scripts/local-repo/deploy-uibrep-mirror.sh
-# серты по умолчанию: /home/svcsecadm/uibrep.crt и uibrep.key
-# имя узла берётся из сертификата автоматически
+# серты: /home/svcsecadm/uibrep.crt и uibrep.key
+# скопируйте docs/scripts/local-repo/ на сервер, затем от root:
+bash deploy-uibrep-mirror.sh
 ```
 
 ### Клиент
