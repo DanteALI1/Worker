@@ -1,0 +1,6 @@
+[redos8_extras_src]
+name=RedOS 8 - Extras (Mirror source)
+baseurl=https://repo1.red-soft.ru/redos/8.0/$basearch/extras,https://mirror.yandex.ru/redos/8.0/$basearch/extras,http://repo.red-soft.ru/redos/8.0/$basearch/extras
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
+enabled=0

@@ -1,0 +1,6 @@
+[RedOS8-Updates-local]
+name=Local RED OS 8 Updates repo
+baseurl=http://10.0.0.10/repos/redos8/redos8_updates_src/
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
+enabled=1

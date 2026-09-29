@@ -1,0 +1,5 @@
+[Internal-local]
+name=Internal packages (local mirror)
+baseurl=http://10.0.0.10/repos/internal/
+gpgcheck=0
+enabled=1
