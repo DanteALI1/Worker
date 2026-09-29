@@ -1,0 +1,6 @@
+[redos8_debuginfo_src]
+name=RedOS 8 - Debuginfo (Mirror source)
+baseurl=https://repo1.red-soft.ru/redos/8.0/$basearch/debuginfo,https://mirror.yandex.ru/redos/8.0/$basearch/debuginfo,http://repo.red-soft.ru/redos/8.0/$basearch/debuginfo
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
+enabled=0

@@ -1,0 +1,7 @@
+[RedOS8-KernelTesting-local]
+name=Local RED OS 8 kernel-testing
+baseurl=https://repo.example.ru/repos/redos8/redos8_kernel_testing_src/
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
+sslverify=1
+enabled=0

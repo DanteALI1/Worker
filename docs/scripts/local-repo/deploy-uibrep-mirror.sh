@@ -276,25 +276,30 @@ firewall-cmd --permanent --remove-service=https 2>/dev/null || true
 firewall-cmd --permanent --add-rich-rule="rule family=\"ipv4\" source address=\"${REPO_NET}\" service name=\"https\" accept"
 firewall-cmd --reload
 
-# --- source .repo для reposync ---
-log "Source-репозитории для reposync"
-cat > /etc/yum.repos.d/redos8_base_src.repo << 'EOF'
-[redos8_base_src]
-name=RedOS 8 - Base (Mirror source)
-baseurl=https://repo1.red-soft.ru/redos/8.0/$basearch/os,https://mirror.yandex.ru/redos/8.0/$basearch/os,http://repo.red-soft.ru/redos/8.0/$basearch/os
+# --- source .repo для reposync (все ветки РЕД ОС 8) ---
+log "Source-репозитории для reposync (base/updates/extras/3rdparty/debuginfo/kernel-*)"
+write_src_repo() {
+  local id="$1" name="$2" path="$3"
+  cat > "/etc/yum.repos.d/${id}.repo" << EOF
+[${id}]
+name=${name}
+baseurl=https://repo1.red-soft.ru/redos/8.0/\$basearch/${path},https://mirror.yandex.ru/redos/8.0/\$basearch/${path},http://repo.red-soft.ru/redos/8.0/\$basearch/${path}
 gpgcheck=1
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
 enabled=0
 EOF
+}
+write_src_repo redos8_base_src           "RedOS 8 - Base (Mirror source)"           os
+write_src_repo redos8_updates_src        "RedOS 8 - Updates (Mirror source)"        updates
+write_src_repo redos8_extras_src         "RedOS 8 - Extras (Mirror source)"         extras
+write_src_repo redos8_3rdparty_src       "RedOS 8 - 3rdparty (Mirror source)"       3rdparty
+write_src_repo redos8_debuginfo_src      "RedOS 8 - Debuginfo (Mirror source)"      debuginfo
+write_src_repo redos8_kernel_rt_src      "RedOS 8 - kernel-rt (Mirror source)"      kernel-rt
+write_src_repo redos8_kernel_testing_src "RedOS 8 - kernel-testing (Mirror source)" kernel-testing
 
-cat > /etc/yum.repos.d/redos8_updates_src.repo << 'EOF'
-[redos8_updates_src]
-name=RedOS 8 - Updates (Mirror source)
-baseurl=https://repo1.red-soft.ru/redos/8.0/$basearch/updates,https://mirror.yandex.ru/redos/8.0/$basearch/updates,http://repo.red-soft.ru/redos/8.0/$basearch/updates
-gpgcheck=1
-gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
-enabled=0
-EOF
+# список для sync/cron (можно сузить через REPOIDS=...)
+REPOIDS_DEFAULT="redos8_base_src redos8_updates_src redos8_extras_src redos8_3rdparty_src redos8_debuginfo_src redos8_kernel_rt_src redos8_kernel_testing_src"
+REPOIDS="${REPOIDS:-$REPOIDS_DEFAULT}"
 
 # --- sync-скрипт (с архивацией на /var) + cron ---
 log "Установка sync-скрипта (ARCHIVE=1 → /var/local-repo-archive) и cron"
@@ -305,9 +310,9 @@ if [[ -f "${SCRIPT_DIR}/repo-archive-tool.sh" ]]; then
   install -m 755 "${SCRIPT_DIR}/repo-archive-tool.sh" /usr/local/sbin/repo-archive-tool.sh
 fi
 
-# nightly sync: newest + archive old RPMs to /var
-cat > /etc/cron.d/redos8-local-repo << 'EOF'
-30 2 * * * root ARCHIVE=1 NEWEST=1 /usr/local/sbin/sync-redos8-repos.sh
+# nightly sync: newest + archive old RPMs to /var (все ветки)
+cat > /etc/cron.d/redos8-local-repo << EOF
+30 2 * * * root ARCHIVE=1 NEWEST=1 REPOIDS="${REPOIDS}" /usr/local/sbin/sync-redos8-repos.sh
 EOF
 chmod 644 /etc/cron.d/redos8-local-repo
 
@@ -351,46 +356,38 @@ else
   echo "Без CA dnf makecache по HTTPS может упасть на проверке сертификата." >&2
 fi
 
-for f in /etc/yum.repos.d/RedOS-Base.repo /etc/yum.repos.d/RedOS-Updates.repo; do
+for f in /etc/yum.repos.d/RedOS-Base.repo /etc/yum.repos.d/RedOS-Updates.repo \
+         /etc/yum.repos.d/RedOS-Extras.repo /etc/yum.repos.d/RedOS-3rdparty.repo; do
   [[ -f "\$f" ]] && sed -i 's/^enabled=1/enabled=0/' "\$f"
 done
 
-cat > /etc/yum.repos.d/RedOS8-Base-local.repo << REPO
-[RedOS8-Base-local]
-name=Local RED OS 8 Base repo
-baseurl=https://${REPO_FQDN}/repos/redos8/redos8_base_src/
+write_local_repo() {
+  local file="\$1" id="\$2" name="\$3" path="\$4" enabled="\$5"
+  cat > "/etc/yum.repos.d/\${file}" << REPO
+[\${id}]
+name=\${name}
+baseurl=https://${REPO_FQDN}\${path}
 gpgcheck=1
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
 sslverify=1
-enabled=1
+enabled=\${enabled}
 REPO
-cat > /etc/yum.repos.d/RedOS8-Updates-local.repo << REPO
-[RedOS8-Updates-local]
-name=Local RED OS 8 Updates repo
-baseurl=https://${REPO_FQDN}/repos/redos8/redos8_updates_src/
-gpgcheck=1
-gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
-sslverify=1
-enabled=1
-REPO
-cat > /etc/yum.repos.d/RedOS8-Archive-Base-local.repo << REPO
-[RedOS8-Archive-Base-local]
-name=Local RED OS 8 Base ARCHIVE (old packages)
-baseurl=https://${REPO_FQDN}/archive/redos8/redos8_base_src/
-gpgcheck=1
-gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
-sslverify=1
-enabled=0
-REPO
-cat > /etc/yum.repos.d/RedOS8-Archive-Updates-local.repo << REPO
-[RedOS8-Archive-Updates-local]
-name=Local RED OS 8 Updates ARCHIVE (old packages)
-baseurl=https://${REPO_FQDN}/archive/redos8/redos8_updates_src/
-gpgcheck=1
-gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RED-SOFT
-sslverify=1
-enabled=0
-REPO
+}
+
+# Актуальные (для установки доп. ПО — extras и 3rdparty включены)
+write_local_repo RedOS8-Base-local.repo           RedOS8-Base-local           "Local RED OS 8 Base"           "/repos/redos8/redos8_base_src/"           1
+write_local_repo RedOS8-Updates-local.repo        RedOS8-Updates-local        "Local RED OS 8 Updates"        "/repos/redos8/redos8_updates_src/"        1
+write_local_repo RedOS8-Extras-local.repo         RedOS8-Extras-local         "Local RED OS 8 Extras"         "/repos/redos8/redos8_extras_src/"         1
+write_local_repo RedOS8-3rdparty-local.repo       RedOS8-3rdparty-local       "Local RED OS 8 3rdparty"       "/repos/redos8/redos8_3rdparty_src/"       1
+# Спец. ветки — по умолчанию выключены, включайте при необходимости
+write_local_repo RedOS8-Debuginfo-local.repo      RedOS8-Debuginfo-local      "Local RED OS 8 Debuginfo"      "/repos/redos8/redos8_debuginfo_src/"      0
+write_local_repo RedOS8-KernelRT-local.repo       RedOS8-KernelRT-local       "Local RED OS 8 kernel-rt"      "/repos/redos8/redos8_kernel_rt_src/"      0
+write_local_repo RedOS8-KernelTesting-local.repo  RedOS8-KernelTesting-local  "Local RED OS 8 kernel-testing" "/repos/redos8/redos8_kernel_testing_src/" 0
+# Архив старых версий
+write_local_repo RedOS8-Archive-Base-local.repo     RedOS8-Archive-Base-local     "Local RED OS 8 Base ARCHIVE"     "/archive/redos8/redos8_base_src/"     0
+write_local_repo RedOS8-Archive-Updates-local.repo  RedOS8-Archive-Updates-local  "Local RED OS 8 Updates ARCHIVE"  "/archive/redos8/redos8_updates_src/"  0
+write_local_repo RedOS8-Archive-Extras-local.repo   RedOS8-Archive-Extras-local   "Local RED OS 8 Extras ARCHIVE"   "/archive/redos8/redos8_extras_src/"   0
+write_local_repo RedOS8-Archive-3rdparty-local.repo RedOS8-Archive-3rdparty-local "Local RED OS 8 3rdparty ARCHIVE" "/archive/redos8/redos8_3rdparty_src/" 0
 
 curl -fsSI "https://\${REPO_HOST}/repos/redos8/redos8_base_src/repodata/repomd.xml" | head -n1 \\
   || echo "Предупреждение: repomd.xml пока недоступен (зеркало ещё качается?)" >&2
@@ -399,7 +396,8 @@ dnf clean all
 dnf makecache
 dnf repolist
 echo "OK → https://${REPO_FQDN}/"
-echo "Старые пакеты: dnf install PKG --enablerepo=RedOS8-Archive-Base-local,RedOS8-Archive-Updates-local"
+echo "Включены: Base, Updates, Extras, 3rdparty"
+echo "Старые пакеты: dnf install PKG --enablerepo=RedOS8-Archive-*-local"
 EOF
 chmod 755 /usr/local/sbin/configure-repo-client.sh
 
@@ -412,6 +410,7 @@ SSL_CRT_SRC=${SSL_CRT}
 URL=https://${REPO_FQDN}/repos/redos8/
 ARCHIVE_URL=https://${REPO_FQDN}/archive/redos8/
 ARCHIVE_ROOT=${ARCHIVE_ROOT}
+REPOIDS=${REPOIDS}
 CA_FOR_CLIENTS=${STORAGE_ROOT}/ca/
 SYNC=/usr/local/sbin/sync-redos8-repos.sh
 ARCHIVE_TOOL=/usr/local/sbin/repo-archive-tool.sh
@@ -421,19 +420,20 @@ EOF
 # --- первичная синхронизация ---
 # Первый прогон: полное зеркало (NEWEST=0) без архивации superseded.
 # Дальше cron: NEWEST=1 ARCHIVE=1 — старые RPM уходят на /var.
+# Внимание: все ветки занимают много места (часто 300–400+ ГБ).
 if [[ "$SKIP_SYNC" != "1" ]]; then
-  log "Первичное зеркалирование (NEWEST=${NEWEST}) — это ДОЛГО и много места"
-  echo "Лог: ${LOG_DIR}/sync-$(date +%F).log"
+  log "Первичное зеркалирование всех веток (NEWEST=${NEWEST}, REPOIDS=${REPOIDS})"
+  echo "Это ДОЛГО и требует много места на /opt. Лог: ${LOG_DIR}/sync-$(date +%F).log"
   if [[ "$NEWEST" == "1" ]]; then
-    ARCHIVE=1 NEWEST=1 DESTDIR="$DESTDIR" ARCHIVE_ROOT="$ARCHIVE_ROOT" \
+    ARCHIVE=1 NEWEST=1 DESTDIR="$DESTDIR" ARCHIVE_ROOT="$ARCHIVE_ROOT" REPOIDS="$REPOIDS" \
       /usr/local/sbin/sync-redos8-repos.sh
   else
-    ARCHIVE=0 NEWEST=0 DESTDIR="$DESTDIR" \
+    ARCHIVE=0 NEWEST=0 DESTDIR="$DESTDIR" REPOIDS="$REPOIDS" \
       /usr/local/sbin/sync-redos8-repos.sh
   fi
 else
   log "SKIP_SYNC=1 — зеркалирование пропущено"
-  echo "Запустите позже: NEWEST=0 ARCHIVE=0 /usr/local/sbin/sync-redos8-repos.sh"
+  echo "Запустите позже: NEWEST=0 ARCHIVE=0 REPOIDS='${REPOIDS}' /usr/local/sbin/sync-redos8-repos.sh"
 fi
 
 # --- проверка ---
