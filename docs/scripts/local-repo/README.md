@@ -1,44 +1,23 @@
 # Скрипты локального репозитория РЕД ОС 8 (HTTPS + УЦ)
 
-Хранилище: **`/opt/repos`**. Раздача: **HTTPS** с вашими `.crt` / `.key` от УЦ.
+Хранилище: **`/opt/repos`**. Раздача: **HTTPS**.
 
-| Скрипт | Где | Назначение |
-|--------|-----|------------|
-| `bootstrap-mirror-server.sh` | зеркало | пакеты, `/opt/repos`, firewalld https, опционально SSL |
-| `install-ssl-certs.sh` | зеркало | установка `.crt`/`.key`/chain, httpd SSL, trust |
-| `sync-redos8-repos.sh` | зеркало | `reposync` + `createrepo` → `/opt/repos/redos8` |
-| `configure-client.sh` | клиент | CA в trust, HTTPS `.repo`, отключение официальных |
+| Скрипт | Назначение |
+|--------|------------|
+| **`deploy-uibrep-mirror.sh`** | **готово к запуску** под `/home/svcsecadm/uibrep.{crt,key}`, FQDN из серта |
+| `bootstrap-mirror-server.sh` | общий bootstrap |
+| `install-ssl-certs.sh` | только SSL |
+| `sync-redos8-repos.sh` | `reposync` + `createrepo` |
+| `configure-client.sh` | универсальный клиент |
 
-Гайд: [`docs/redos8-local-repo.md`](../../redos8-local-repo.md).
+Пошагово: [`docs/redos8-uibrep-runbook.md`](../../redos8-uibrep-runbook.md).
 
-## Зеркало
-
-```bash
-cd docs/scripts/local-repo
-
-REPO_NET=10.0.0.0/8 \
-REPO_FQDN=repo.example.ru \
-SSL_CRT=/path/to/server.crt \
-SSL_KEY=/path/to/server.key \
-SSL_CHAIN=/path/to/ca-chain.crt \
-  bash bootstrap-mirror-server.sh
-
-NEWEST=0 /usr/local/sbin/sync-redos8-repos.sh
-```
-
-Только SSL (если зеркало уже есть):
+## Запуск на вашем зеркале
 
 ```bash
-SSL_CRT=/path/server.crt SSL_KEY=/path/server.key \
-REPO_FQDN=repo.example.ru bash install-ssl-certs.sh
-```
+# от root, серты уже в /home/svcsecadm/
+bash deploy-uibrep-mirror.sh
 
-## Клиент
-
-```bash
-REPO_HOST=repo.example.ru \
-REPO_IP=10.0.0.10 \
-PROTO=https \
-CA_CERT=/path/to/ca-root.crt \
-  bash configure-client.sh
+# только подготовка без скачивания пакетов:
+SKIP_SYNC=1 bash deploy-uibrep-mirror.sh
 ```

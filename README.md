@@ -2,25 +2,24 @@
 
 Документация по инфраструктуре на РЕД ОС 8:
 
-- **[Локальный репозиторий РЕД ОС 8 (HTTPS + УЦ)](docs/redos8-local-repo.md)** — зеркало на `/opt/repos`, раздача по HTTPS с вашими `.crt`/`.key`
+- **[Запуск у вас: uibrep.crt / uibrep.key](docs/redos8-uibrep-runbook.md)** — пошагово + один скрипт
+- **[Полный гайд локального репозитория (HTTPS)](docs/redos8-local-repo.md)**
 - Конфиги: [`docs/configs/local-repo/`](docs/configs/local-repo/)
 - Скрипты: [`docs/scripts/local-repo/`](docs/scripts/local-repo/)
 
-### Зеркало
+### Зеркало (ваши серты в `/home/svcsecadm`)
 
 ```bash
-cd docs/scripts/local-repo
-REPO_FQDN=repo.example.ru \
-SSL_CRT=/path/server.crt SSL_KEY=/path/server.key \
-REPO_NET=10.0.0.0/8 \
-  bash bootstrap-mirror-server.sh
-NEWEST=0 /usr/local/sbin/sync-redos8-repos.sh
+# на сервере-зеркале от root:
+bash docs/scripts/local-repo/deploy-uibrep-mirror.sh
+# серты по умолчанию: /home/svcsecadm/uibrep.crt и uibrep.key
+# имя узла берётся из сертификата автоматически
 ```
 
 ### Клиент
 
 ```bash
-REPO_HOST=repo.example.ru REPO_IP=10.0.0.10 \
-PROTO=https CA_CERT=/path/ca-root.crt \
-  bash docs/scripts/local-repo/configure-client.sh
+scp root@ЗЕРКАЛО:/opt/repos/ca/uibrep-ca.crt /tmp/
+scp root@ЗЕРКАЛО:/usr/local/sbin/configure-repo-client.sh /tmp/
+REPO_IP=IP_ЗЕРКАЛА CA_FILE=/tmp/uibrep-ca.crt bash /tmp/configure-repo-client.sh
 ```
