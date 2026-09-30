@@ -309,6 +309,9 @@ install -m 750 "$SYNC_SRC" /usr/local/sbin/sync-redos8-repos.sh
 if [[ -f "${SCRIPT_DIR}/repo-archive-tool.sh" ]]; then
   install -m 755 "${SCRIPT_DIR}/repo-archive-tool.sh" /usr/local/sbin/repo-archive-tool.sh
 fi
+if [[ -f "${SCRIPT_DIR}/clean-local-repo.sh" ]]; then
+  install -m 750 "${SCRIPT_DIR}/clean-local-repo.sh" /usr/local/sbin/clean-local-repo.sh
+fi
 
 # nightly sync: newest + archive old RPMs to /var (все ветки)
 cat > /etc/cron.d/redos8-local-repo << EOF
