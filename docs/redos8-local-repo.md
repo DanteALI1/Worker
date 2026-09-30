@@ -137,15 +137,23 @@ dnf install ПАКЕТ --enablerepo=RedOS8-Debuginfo-local
 
 ## 5. Архив старых пакетов (`/var`)
 
-При ночном sync (`NEWEST=1`) RPM, которых больше нет в новом зеркале, **переносятся** в `/var/local-repo-archive` (не удаляются сразу).
+Ночной sync (`ARCHIVE=1 NEWEST=1`) сравнивает `/opt` с upstream:
+
+| Ситуация | Что происходит |
+|----------|----------------|
+| Обновление пакета | старый RPM → `/var/local-repo-archive`, новый → `/opt` |
+| Новый пакет | появляется в `/opt` |
+| Нет изменений | **`/opt` не трогается**, архив не меняется |
+
+Неизменённые RPM в `/opt` не перезаписываются.
 
 ```text
 /opt/repos/redos8/                      — актуальные
-/var/local-repo-archive/redos8/         — старые
-/var/local-repo-archive/reports/        — отчёты NEW / ARCHIVE
+/var/local-repo-archive/redos8/         — старые (только superseded)
+/var/local-repo-archive/reports/        — отчёты NEW / ARCHIVE / UNCHANGED
 ```
 
-Первый полный sync архив почти не наполняет. Архив растёт со **второй** синхронизации (cron).
+Первый полный sync (`NEWEST=0`) архив почти не наполняет. Архив растёт, когда upstream отдаёт новые версии (cron).
 
 ```bash
 # отчёт
