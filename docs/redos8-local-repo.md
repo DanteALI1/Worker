@@ -185,9 +185,14 @@ repo-archive-tool.sh restore redos8_base_src имя.rpm
 | Ночной sync + архив | уже в cron `02:30` |
 | Ручной sync (все ветки) | `ARCHIVE=1 NEWEST=1 /usr/local/sbin/sync-redos8-repos.sh` |
 | Sync только части | `REPOIDS="redos8_extras_src redos8_3rdparty_src" ARCHIVE=1 NEWEST=1 /usr/local/sbin/sync-redos8-repos.sh` |
+| Полная очистка `/opt` + `/var/local-repo-ar*` | `FORCE=1 /usr/local/sbin/clean-local-repo.sh` (или `bash clean-local-repo.sh` → `YES`) |
+| Только архив / только пакеты | `TARGET=archive\|opt FORCE=1 clean-local-repo.sh` |
 | Параметры | `cat /opt/repos/DEPLOY.txt` |
 | Лог | `/var/log/local-repo/sync-ДАТА.log` |
 | Отчёт архива | `cat /var/local-repo-archive/reports/latest.txt` |
+
+После очистки зеркало пустое — заново: `NEWEST=0 ARCHIVE=0 /usr/local/sbin/sync-redos8-repos.sh`.  
+По умолчанию `KEEP_META=1` сохраняет `/opt/repos/ca` и `DEPLOY.txt`. Полный снос meta: `KEEP_META=0`.
 
 ---
 
@@ -220,6 +225,7 @@ repo-archive-tool.sh restore redos8_base_src имя.rpm
 |------|------------|
 | `scripts/local-repo/deploy-uibrep-mirror.sh` | деплой зеркала |
 | `scripts/local-repo/sync-redos8-repos.sh` | sync + архив на `/var` |
+| `scripts/local-repo/clean-local-repo.sh` | полная очистка `/opt/repos` и архива |
 | `scripts/local-repo/repo-archive-tool.sh` | list/search/url/restore |
 | `scripts/local-repo/configure-client.sh` | альтернативная настройка клиента |
 | `configs/local-repo/sources/` | source `.repo` для reposync |
