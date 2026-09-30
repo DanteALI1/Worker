@@ -7,9 +7,13 @@
 #   /var/local-repo-archive/reports/   — отчёты «что ушло в архив»
 #
 # Алгоритм (ARCHIVE=1, NEWEST=1):
-#   1) Скачать новое зеркало в DESTDIR.incoming/ (не трогая текущее)
-#   2) RPM из текущего зеркала, которых нет в новом → mv в /var/.../archive
-#   3) Заменить текущее зеркало новым + createrepo (mirror и archive)
+#   1) Скачать свежий снимок в DESTDIR.incoming/ (текущее /opt не трогаем)
+#   2) Сравнить списки RPM (только имена файлов):
+#        — нет отличий → /opt остаётся как есть, архив не трогаем
+#        — есть обновления/новые → старые RPM (есть в /opt, нет в incoming)
+#          переносятся в /var/.../archive; новые копируются в /opt;
+#          неизменённые RPM в /opt не перезаписываются
+#   3) createrepo только если были изменения
 #   4) Retention по ARCHIVE_KEEP_DAYS
 #
 #   install -m 750 sync-redos8-repos.sh /usr/local/sbin/sync-redos8-repos.sh
@@ -93,8 +97,8 @@ sync_one_with_archive() {
   local repoid="$1"
   local old="${DESTDIR}/${repoid}"
   local new="${INCOMING}/${repoid}"
-  local base archived=0 newpkgs=0
-  local old_list new_list
+  local base archived=0 newpkgs=0 unchanged=0
+  local old_list new_list only_new only_old
 
   echo "--- sync+archive $repoid ---"
   mkdir -p "$old"
@@ -102,12 +106,14 @@ sync_one_with_archive() {
 
   old_list="$(mktemp)"
   new_list="$(mktemp)"
+  only_new="$(mktemp)"
+  only_old="$(mktemp)"
   find "$old" -maxdepth 1 -type f -name '*.rpm' -printf '%f\n' 2>/dev/null | sort >"$old_list"
 
   report "=== ${repoid} ==="
-  report "Пакетов до: $(wc -l <"$old_list")"
+  report "Пакетов в /opt до sync: $(wc -l <"$old_list")"
 
-  # новое зеркало → INCOMING/repoid (стандартный путь reposync)
+  # снимок upstream → INCOMING (каталог /opt не меняем до сравнения)
   local sync_opts=(--downloadcomps --download-metadata -p "$INCOMING")
   if [[ "$NEWEST" == "1" ]]; then
     sync_opts+=(--newest-only --delete)
@@ -116,51 +122,67 @@ sync_one_with_archive() {
 
   [[ -d "$new" ]] || mkdir -p "$new"
   find "$new" -maxdepth 1 -type f -name '*.rpm' -printf '%f\n' 2>/dev/null | sort >"$new_list"
-  report "Пакетов после скачивания: $(wc -l <"$new_list")"
+  report "Пакетов в upstream (incoming): $(wc -l <"$new_list")"
+
+  comm -13 "$old_list" "$new_list" >"$only_new"
+  comm -23 "$old_list" "$new_list" >"$only_old"
+  newpkgs=$(wc -l <"$only_new")
+  local to_archive
+  to_archive=$(wc -l <"$only_old")
+  unchanged=$(comm -12 "$old_list" "$new_list" | wc -l)
+  # wc -l может дать ведущие пробелы
+  newpkgs=$((10#${newpkgs// /}))
+  to_archive=$((10#${to_archive// /}))
+  unchanged=$((10#${unchanged// /}))
+
+  # нет новых и нечего архивировать → /opt не трогаем
+  if [[ "$newpkgs" -eq 0 && "$to_archive" -eq 0 ]]; then
+    report "UNCHANGED  набор RPM совпадает с upstream — /opt/${repoid} не изменялся"
+    report "Итого ${repoid}: актуальных=$(wc -l <"$old_list"), новых=0, в_архив=0, без_изменений=${unchanged}"
+    rm -rf "$new"
+    rm -f "$old_list" "$new_list" "$only_new" "$only_old"
+    return 0
+  fi
 
   report ""
-  report "Обновления / новые файлы (в новом, не было в старом):"
+  report "Новые / обновлённые файлы (появятся в /opt):"
   while read -r base; do
     [[ -n "$base" ]] || continue
     report "NEW      ${repoid}/${base}"
-    newpkgs=$((newpkgs + 1))
-  done < <(comm -13 "$old_list" "$new_list")
+  done <"$only_new"
 
   report ""
-  report "Уходят в архив (были в старом, нет в новом):"
+  report "Уходят в /var (были в /opt, нет в upstream — superseded/удалены):"
   while read -r base; do
     [[ -n "$base" ]] || continue
     if [[ -f "${old}/${base}" ]]; then
       archive_rpm "${old}/${base}" "$repoid"
       archived=$((archived + 1))
     fi
-  done < <(comm -23 "$old_list" "$new_list")
+  done <"$only_old"
 
-  # остальные старые rpm с тем же basename, что и в new — удаляем (заменим новыми)
+  # только новые RPM → в /opt; совпадающие имена не перезаписываем
   while read -r base; do
     [[ -n "$base" ]] || continue
-    rm -f "${old}/${base}"
-  done < <(comm -12 "$old_list" "$new_list")
+    if [[ -f "${new}/${base}" ]]; then
+      mv -f "${new}/${base}" "${old}/${base}"
+    fi
+  done <"$only_new"
 
-  # очистить старые метаданные, перенести содержимое new → old
-  find "$old" -mindepth 1 -maxdepth 1 ! -name '*.rpm' -exec rm -rf {} + 2>/dev/null || true
-  # на всякий случай оставшиеся rpm → архив
-  while IFS= read -r -d '' rpm; do
-    archive_rpm "$rpm" "$repoid"
-    archived=$((archived + 1))
-  done < <(find "$old" -maxdepth 1 -type f -name '*.rpm' -print0 2>/dev/null)
+  # обновить вспомогательные файлы (comps и т.п.), не трогая rpm
+  if [[ -f "${new}/comps.xml" ]]; then
+    cp -f "${new}/comps.xml" "${old}/comps.xml"
+  fi
 
-  shopt -s dotglob nullglob
-  mv "$new"/* "$old"/ 2>/dev/null || true
-  shopt -u dotglob nullglob
   rm -rf "$new"
-
   rebuild_repo "$old"
-  rebuild_repo "${ARCHIVE_REPO}/${repoid}"
+  if [[ "$archived" -gt 0 ]]; then
+    rebuild_repo "${ARCHIVE_REPO}/${repoid}"
+  fi
 
   report ""
-  report "Итого ${repoid}: актуальных=$(find "$old" -maxdepth 1 -type f -name '*.rpm' | wc -l), новых_файлов=${newpkgs}, в_архив=${archived}"
-  rm -f "$old_list" "$new_list"
+  report "Итого ${repoid}: актуальных=$(find "$old" -maxdepth 1 -type f -name '*.rpm' | wc -l), новых_файлов=${newpkgs}, в_архив=${archived}, без_изменений=${unchanged}"
+  rm -f "$old_list" "$new_list" "$only_new" "$only_old"
 }
 
 sync_one_plain() {
