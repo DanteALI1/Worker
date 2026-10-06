@@ -312,6 +312,9 @@ fi
 if [[ -f "${SCRIPT_DIR}/clean-local-repo.sh" ]]; then
   install -m 750 "${SCRIPT_DIR}/clean-local-repo.sh" /usr/local/sbin/clean-local-repo.sh
 fi
+if [[ -f "${SCRIPT_DIR}/wipe-local-repo.sh" ]]; then
+  install -m 750 "${SCRIPT_DIR}/wipe-local-repo.sh" /usr/local/sbin/wipe-local-repo.sh
+fi
 
 # nightly sync: newest + archive old RPMs to /var (все ветки)
 cat > /etc/cron.d/redos8-local-repo << EOF
