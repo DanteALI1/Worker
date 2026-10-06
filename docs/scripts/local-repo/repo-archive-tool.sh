@@ -6,8 +6,10 @@
 #   bash repo-archive-tool.sh search bash
 #   bash repo-archive-tool.sh show bash-5
 #   bash repo-archive-tool.sh url bash-5.1.8-1.el8.x86_64.rpm
-#   bash repo-archive-tool.sh restore redos8_base_src bash-5.1.8-1.el8.x86_64.rpm
-#       → копирует RPM обратно в актуальное зеркало и пересобирает createrepo
+#   bash repo-archive-tool.sh restore-all
+#       → вернуть в /opt все RPM из архива, которых там нет (после ложной архивации)
+#   MOVE=1 bash repo-archive-tool.sh restore-all
+#       → то же, но перенести (не копировать), чтобы не дублировать место
 #
 # Переменные:
 #   ARCHIVE_REPO=/var/local-repo-archive/redos8
@@ -44,6 +46,8 @@ usage() {
   latest                        — последний отчёт
   url <file.rpm>                — HTTPS URL для скачивания
   restore <repoid> <file.rpm>   — вернуть пакет в актуальное зеркало + createrepo
+  restore-all                   — вернуть в /opt все RPM, которых там нет
+                                MOVE=1 — перенести из архива (не копировать)
   du                            — занятое место архивом
 
 Архив:   $ARCHIVE_REPO
@@ -97,6 +101,44 @@ case "$CMD" in
     fi
     echo "Восстановлен: ${DESTDIR}/${repoid}/$(basename "$src")"
     echo "На клиенте: dnf clean all && dnf install $(basename "$src" .rpm | sed 's/\.[^.]*$//')  # или точное имя"
+    ;;
+  restore-all)
+    moved=0
+    skipped=0
+    shopt -s nullglob
+    for src in "$ARCHIVE_REPO"/*/*.rpm; do
+      [[ -f "$src" ]] || continue
+      repoid="$(basename "$(dirname "$src")")"
+      base="$(basename "$src")"
+      dest="${DESTDIR}/${repoid}/${base}"
+      mkdir -p "${DESTDIR}/${repoid}"
+      if [[ -f "$dest" ]]; then
+        skipped=$((skipped + 1))
+        continue
+      fi
+      if [[ "${MOVE:-0}" == "1" ]]; then
+        mv -f "$src" "$dest"
+      else
+        cp -a "$src" "$dest"
+      fi
+      moved=$((moved + 1))
+      echo "RESTORE ${repoid}/${base}"
+    done
+    shopt -u nullglob
+    for d in "$DESTDIR"/*; do
+      [[ -d "$d" ]] || continue
+      if command -v createrepo >/dev/null 2>&1; then
+        if [[ -f "$d/comps.xml" ]]; then
+          createrepo -v --compress-type=zstd --general-compress-type=zstd "$d" -g comps.xml >/dev/null
+        else
+          createrepo -v --compress-type=zstd --general-compress-type=zstd "$d" >/dev/null
+        fi
+      else
+        echo "ПРЕДУПРЕЖДЕНИЕ: createrepo не найден, пересоберите метаданные вручную для $d" >&2
+      fi
+    done
+    echo "Готово: возвращено=${moved}, уже_были_в_opt=${skipped}  DESTDIR=$DESTDIR"
+    [[ "${MOVE:-0}" == "1" ]] && echo "Файлы перенесены из архива (MOVE=1)."
     ;;
   du)
     du -sh "$ARCHIVE_REPO" 2>/dev/null || echo "0"
