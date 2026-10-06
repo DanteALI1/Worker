@@ -13,6 +13,8 @@
 #        — есть обновления/новые → старые RPM (есть в /opt, нет в incoming)
 #          переносятся в /var/.../archive; новые копируются в /opt;
 #          неизменённые RPM в /opt не перезаписываются
+#   2.1) Защита: пустой/урезанный incoming (нет сети, сбой reposync)
+#        → /opt НЕ трогаем, в архив ничего не уходит
 #   3) createrepo только если были изменения
 #   4) Retention по ARCHIVE_KEEP_DAYS
 #
@@ -25,6 +27,8 @@
 #   ARCHIVE_KEEP_DAYS=180   (0 = не чистить)
 #   REPOIDS="redos8_base_src redos8_updates_src redos8_extras_src ..."
 #   NEWEST=1|0
+#   MIN_INCOMING_PCT=80  — если incoming < N% пакетов от /opt, abort (нет сети)
+#   FORCE_SHRINK=1       — разрешить сильное сокращение (редко нужно)
 #   LOG_DIR=/var/log/local-repo
 
 set -euo pipefail
@@ -37,7 +41,11 @@ ARCHIVE_KEEP_DAYS="${ARCHIVE_KEEP_DAYS:-180}"
 # Все основные ветки РЕД ОС 8 (для установки доп. ПО нужны extras и 3rdparty)
 REPOIDS="${REPOIDS:-redos8_base_src redos8_updates_src redos8_extras_src redos8_3rdparty_src redos8_debuginfo_src redos8_kernel_rt_src redos8_kernel_testing_src}"
 NEWEST="${NEWEST:-1}"
+# Не архивировать /opt, если снимок upstream подозрительно пустой/маленький
+MIN_INCOMING_PCT="${MIN_INCOMING_PCT:-80}"
+FORCE_SHRINK="${FORCE_SHRINK:-0}"
 LOG_DIR="${LOG_DIR:-/var/log/local-repo}"
+SYNC_FAIL=0
 INCOMING="${INCOMING:-${DESTDIR}.incoming}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 LOG="${LOG_DIR}/sync-$(date +%F).log"
@@ -50,6 +58,7 @@ exec >>"$LOG" 2>&1
 echo "=== $(date -Is) sync start ==="
 echo "DESTDIR=$DESTDIR ARCHIVE=$ARCHIVE ARCHIVE_ROOT=$ARCHIVE_ROOT"
 echo "REPOIDS=$REPOIDS NEWEST=$NEWEST ARCHIVE_KEEP_DAYS=$ARCHIVE_KEEP_DAYS"
+echo "MIN_INCOMING_PCT=$MIN_INCOMING_PCT FORCE_SHRINK=$FORCE_SHRINK"
 
 dnf makecache || true
 
@@ -118,11 +127,44 @@ sync_one_with_archive() {
   if [[ "$NEWEST" == "1" ]]; then
     sync_opts+=(--newest-only --delete)
   fi
-  reposync --repo "$repoid" "${sync_opts[@]}"
+  if ! reposync --repo "$repoid" "${sync_opts[@]}"; then
+    report "ABORT  ${repoid}: reposync завершился с ошибкой (нет сети?) — /opt не изменён"
+    SYNC_FAIL=1
+    rm -rf "$new"
+    rm -f "$old_list" "$new_list" "$only_new" "$only_old"
+    return 0
+  fi
 
   [[ -d "$new" ]] || mkdir -p "$new"
   find "$new" -maxdepth 1 -type f -name '*.rpm' -printf '%f\n' 2>/dev/null | sort >"$new_list"
-  report "Пакетов в upstream (incoming): $(wc -l <"$new_list")"
+  local old_count new_count
+  old_count=$(wc -l <"$old_list")
+  new_count=$(wc -l <"$new_list")
+  old_count=$((10#${old_count// /}))
+  new_count=$((10#${new_count// /}))
+  report "Пакетов в upstream (incoming): ${new_count}"
+
+  # Пустой/урезанный incoming при непустом /opt = сбой, а не «все пакеты удалили»
+  if [[ "$old_count" -gt 0 && "$FORCE_SHRINK" != "1" ]]; then
+    if [[ "$new_count" -eq 0 ]]; then
+      report "ABORT  ${repoid}: incoming пуст (${old_count} RPM в /opt) — /opt не изменён, архив не тронут"
+      SYNC_FAIL=1
+      rm -rf "$new"
+      rm -f "$old_list" "$new_list" "$only_new" "$only_old"
+      return 0
+    fi
+    if [[ "$MIN_INCOMING_PCT" =~ ^[0-9]+$ && "$MIN_INCOMING_PCT" -gt 0 ]]; then
+      local min_need
+      min_need=$(( old_count * MIN_INCOMING_PCT / 100 ))
+      if [[ "$new_count" -lt "$min_need" ]]; then
+        report "ABORT  ${repoid}: incoming ${new_count} < ${min_need} (${MIN_INCOMING_PCT}% от ${old_count}) — /opt не изменён"
+        SYNC_FAIL=1
+        rm -rf "$new"
+        rm -f "$old_list" "$new_list" "$only_new" "$only_old"
+        return 0
+      fi
+    fi
+  fi
 
   comm -13 "$old_list" "$new_list" >"$only_new"
   comm -23 "$old_list" "$new_list" >"$only_old"
@@ -243,6 +285,12 @@ restorecon -Rv "$STORAGE_ROOT" "$ARCHIVE_ROOT" >/dev/null 2>&1 || true
 
 ln -sfn "$REPORT" "${REPORT_DIR}/latest.txt"
 report ""
+if [[ "$SYNC_FAIL" -ne 0 ]]; then
+  report "ОШИБКА: часть веток не синхронизирована (сеть/пустой incoming). /opt по ним не менялся."
+  report "Отчёт: $REPORT"
+  echo "=== $(date -Is) sync FAILED === report=$REPORT ==="
+  exit 1
+fi
 report "Готово: $(date -Is)"
 report "Отчёт: $REPORT"
 report "Скачать старый RPM: https://<FQDN>/archive/redos8/<repoid>/<file.rpm>"

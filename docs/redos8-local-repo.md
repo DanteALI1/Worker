@@ -144,8 +144,9 @@ dnf install ПАКЕТ --enablerepo=RedOS8-Debuginfo-local
 | Обновление пакета | старый RPM → `/var/local-repo-archive`, новый → `/opt` |
 | Новый пакет | появляется в `/opt` |
 | Нет изменений | **`/opt` не трогается**, архив не меняется |
+| Нет сети / пустой reposync | **`/opt` не трогается** (`ABORT` в отчёте) |
 
-Неизменённые RPM в `/opt` не перезаписываются.
+Неизменённые RPM в `/opt` не перезаписываются. Если incoming меньше **80%** пакетов от `/opt` (`MIN_INCOMING_PCT`), архивация не выполняется.
 
 ```text
 /opt/repos/redos8/                      — актуальные
@@ -172,6 +173,9 @@ dnf install PKG --enablerepo=RedOS8-Archive-Base-local,RedOS8-Archive-Updates-lo
 
 # вернуть в актуальное зеркало (на сервере)
 repo-archive-tool.sh restore redos8_base_src имя.rpm
+
+# если без интернета всё ошибочно ушло в архив:
+MOVE=1 repo-archive-tool.sh restore-all
 ```
 
 Хранение: **180 дней** (`ARCHIVE_KEEP_DAYS`). Не чистить: в cron добавьте `ARCHIVE_KEEP_DAYS=0`.
@@ -206,6 +210,7 @@ repo-archive-tool.sh restore redos8_base_src имя.rpm
 | hostname mismatch | FQDN в `.repo` ≠ SAN — смотрите `DEPLOY.txt` |
 | Мало места | `df -h /opt /var` — все ветки часто 300–400+ ГБ на `/opt` |
 | 404 repomd | sync ещё идёт; проверьте нужную ветку (`extras` / `3rdparty`) |
+| `/opt` опустел без обновлений | ложная архивация при сбое сети — `MOVE=1 repo-archive-tool.sh restore-all` |
 
 ---
 
