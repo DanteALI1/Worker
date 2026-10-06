@@ -190,6 +190,7 @@ MOVE=1 repo-archive-tool.sh restore-all
 | Ручной sync (все ветки) | `ARCHIVE=1 NEWEST=1 /usr/local/sbin/sync-redos8-repos.sh` |
 | Sync только части | `REPOIDS="redos8_extras_src redos8_3rdparty_src" ARCHIVE=1 NEWEST=1 /usr/local/sbin/sync-redos8-repos.sh` |
 | Полная очистка `/opt` + `/var/local-repo-ar*` | `FORCE=1 /usr/local/sbin/clean-local-repo.sh` (или `bash clean-local-repo.sh` → `YES`) |
+| Снести всё перед повторным деплоем | `FORCE=1 bash wipe-local-repo.sh` затем `bash deploy-uibrep-mirror.sh` |
 | Только архив / только пакеты | `TARGET=archive\|opt FORCE=1 clean-local-repo.sh` |
 | Параметры | `cat /opt/repos/DEPLOY.txt` |
 | Лог | `/var/log/local-repo/sync-ДАТА.log` |
@@ -231,6 +232,7 @@ MOVE=1 repo-archive-tool.sh restore-all
 | `scripts/local-repo/deploy-uibrep-mirror.sh` | деплой зеркала |
 | `scripts/local-repo/sync-redos8-repos.sh` | sync + архив на `/var` |
 | `scripts/local-repo/clean-local-repo.sh` | полная очистка `/opt/repos` и архива |
+| `scripts/local-repo/wipe-local-repo.sh` | полное удаление перед повторным деплоем |
 | `scripts/local-repo/repo-archive-tool.sh` | list/search/url/restore |
 | `scripts/local-repo/configure-client.sh` | альтернативная настройка клиента |
 | `configs/local-repo/sources/` | source `.repo` для reposync |

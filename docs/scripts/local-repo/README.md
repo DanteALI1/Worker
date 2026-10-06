@@ -7,7 +7,8 @@
 | `deploy-uibrep-mirror.sh` | деплой: HTTPS, `/opt/repos`, архив на `/var`, cron |
 | `sync-redos8-repos.sh` | sync + перенос старых RPM в `/var/local-repo-archive` |
 | `repo-archive-tool.sh` | list / search / url / restore / du |
-| `clean-local-repo.sh` | полная очистка `/opt/repos` и `/var/local-repo-ar*` |
+| `clean-local-repo.sh` | очистка `/opt/repos` и архива (можно оставить ca/DEPLOY) |
+| `wipe-local-repo.sh` | полное удаление данных перед повторным деплоем |
 | `configure-client.sh` | настройка клиента (альтернатива helper с зеркала) |
 
 ```bash
@@ -18,8 +19,10 @@ SKIP_SYNC=1 bash deploy-uibrep-mirror.sh   # без первого reposync
 # полная очистка пакетов и архива (спросит YES):
 bash clean-local-repo.sh
 FORCE=1 bash clean-local-repo.sh                 # без вопроса
-TARGET=archive FORCE=1 bash clean-local-repo.sh  # только /var/local-repo-ar*
-TARGET=opt FORCE=1 bash clean-local-repo.sh      # только пакеты в /opt/repos
+
+# снести всё и поставить зеркало заново:
+FORCE=1 bash wipe-local-repo.sh
+bash deploy-uibrep-mirror.sh
 ```
 
 По умолчанию sync зеркалирует все ветки: base, updates, **extras**, **3rdparty**, debuginfo, kernel-rt, kernel-testing (часто 300–400+ ГБ на `/opt`).
