@@ -12,6 +12,8 @@
 
 Автоматизация: [`scripts/netbox/install-netbox-redos8.sh`](scripts/netbox/install-netbox-redos8.sh) — полный интерактивный скрипт (на каждом этапе спрашивает данные).
 
+> Установка **в Docker** (отдельная инструкция): [`netbox-redos8-docker-install.md`](netbox-redos8-docker-install.md).
+
 ---
 
 ## Быстрый старт
