@@ -1,0 +1,18 @@
+# SELinux: nginx (httpd_t) → gunicorn на unreserved/high port
+# Сборка и установка:
+#   checkmodule -M -m -o netbox_local.mod netbox_local.te
+#   semodule_package -o netbox_local.pp -m netbox_local.mod
+#   semodule -i netbox_local.pp
+#
+# Дополнительно (обязательно):
+#   setsebool -P httpd_can_network_connect 1
+
+module netbox_local 1.0;
+
+require {
+    type httpd_t;
+    type unreserved_port_t;
+    class tcp_socket name_connect;
+}
+
+allow httpd_t unreserved_port_t:tcp_socket name_connect;
