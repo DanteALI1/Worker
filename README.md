@@ -4,13 +4,17 @@
 
 ## NetBox
 
-Развёртывание NetBox на пустом сервере (IP `10.0.130.10`, HTTPS, SELinux, `/opt/netbox`):
+Развёртывание на пустом сервере РЕД ОС 8 (IP `10.0.130.10`, HTTPS, SELinux).
 
-**Инструкция:** [`docs/netbox-redos8-install.md`](docs/netbox-redos8-install.md)
+| Способ | Инструкция | Скрипт |
+|---|---|---|
+| Классика (`/opt/netbox`) | [`docs/netbox-redos8-install.md`](docs/netbox-redos8-install.md) | `install-netbox-redos8.sh` |
+| Docker (`/opt/netbox-docker`) | [`docs/netbox-redos8-docker-install.md`](docs/netbox-redos8-docker-install.md) | `install-netbox-docker-redos8.sh` |
 
 ```bash
 # скопируйте docs/scripts/netbox/ на сервер, затем от root:
-bash install-netbox-redos8.sh
+bash install-netbox-redos8.sh           # без Docker
+bash install-netbox-docker-redos8.sh    # в Docker
 ```
 
 ## Локальный репозиторий
